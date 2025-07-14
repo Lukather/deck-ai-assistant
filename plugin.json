@@ -1,7 +1,9 @@
 {
-  "name": "Example Plugin",
-  "author": "John Doe",
+  "name": "Decky AI Assistant",
+  "author": "Lorenzo Strambi",
+  "description": "AI assistant for the Steam Deck",
   "flags": ["debug", "_root"],
+  "main": "main.py",
   "api_version": 1,
   "publish": {
     "tags": ["template", "root"],
