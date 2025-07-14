@@ -1,7 +1,3 @@
-Of course, Lorenzo! Here's your fully translated and polished `README.md` in English — crafted for clarity and style, perfect for showcasing your plugin:
-
----
-
 ## 📘 `README.md` – *AI-ssistant Deck*
 
 ```markdown
