@@ -1,6 +1,3 @@
-## 📘 `README.md` – *AI-ssistant Deck*
-
-```markdown
 # 🤖 AI-ssistant Deck
 
 **AI-ssistant Deck** is a plugin for the Steam Deck built with [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader). It allows users to ask questions to a custom AI assistant directly from their console.
@@ -59,49 +56,27 @@ AI-ssistant Deck is designed to integrate with AI providers such as GPT-4, Gemin
 GitHub: [lukather](https://github.com/your-username)  
 Email: mail@lukather.net
 
-## ToDo List
+## 📋 ToDo List
 
-✅ Tasks Completed
-[x] Created the deck-ai-assistant project using Decky plugin template
+### ✅ Tasks Completed
+- [x] Created the deck-ai-assistant project using Decky plugin template
+- [x] Customized plugin.json with correct name and description
+- [x] Updated package.json with author, repo, and metadata
+- [x] Fixed TypeScript issues in AIAssistant.tsx (TS2345, TS2322, etc.)
+- [x] Successfully transferred the plugin files to Steam Deck via SCP
+- [x] Updated plugin name displayed in Decky menu
+- [x] Verified frontend UI displays correctly inside Decky menu
 
-[x] Customized plugin.json with correct name and description
-
-[x] Updated package.json with author, repo, and metadata
-
-[x] Fixed TypeScript issues in AIAssistant.tsx (TS2345, TS2322, etc.)
-
-[x] Successfully transferred the plugin files to Steam Deck via SCP
-
-[x] Updated plugin name displayed in Decky menu
-
-[x] Verified frontend UI displays correctly inside Decky menu
-
-🧩 Tasks To Do
-[ ] Ensure main.py backend is loaded and recognized by Decky Loader
-
-[ ] Add logging with decky.logger.info() for debugging
-
-[ ] Confirm communication between frontend and backend via ask_question()
-
-[ ] Integrate real AI API (OpenAI, Claude, Gemini, etc.)
-
-[ ] Implement secure local storage of API key
-
-[ ] Handle frontend states: loading, error, and response
-
-[ ] Build a settings interface for user configuration
-
-[ ] Add a custom icon for the plugin in the Decky menu
-
-
-
----
+### 🧩 Tasks To Do
+- [ ] Ensure main.py backend is loaded and recognized by Decky Loader
+- [ ] Add logging with decky.logger.info() for debugging
+- [ ] Confirm communication between frontend and backend via ask_question()
+- [ ] Integrate real AI API (OpenAI, Claude, Gemini, etc.)
+- [ ] Implement secure local storage of API key
+- [ ] Handle frontend states: loading, error, and response
+- [ ] Build a settings interface for user configuration
+- [ ] Add a custom icon for the plugin in the Decky menu
 
 ## 📄 License
 
 Distributed under the **BSD-3-Clause License**.
-```
-
----
-
-You can tweak any section — especially your contact info and repo link — and I’ll be happy to refine it even more. Ready to make this project shine on GitHub or prefer we jump into the API logic next? 🧠💬🚀
