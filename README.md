@@ -79,4 +79,4 @@ Email: mail@lukather.net
 
 ## 📄 License
 
-Distributed under the **BSD-3-Clause License**.
+Distributed under the **GNU GPL V2 License**.
