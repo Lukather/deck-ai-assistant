@@ -1,46 +1,47 @@
-import { ServerAPI } from "decky-frontend-lib";
+import { useState } from "react";
+import { PanelSection, PanelSectionRow, TextField, ButtonItem, Spinner } from "@decky/ui";
+import { call } from "@decky/api";
 
-import {
-    definePlugin,
-    PanelSection,
-    TextField,
-    ButtonItem,
-    staticClasses,
-  } from "decky-frontend-lib";
-  import { useState } from "react";
-  
-  const AIAssistant = ({ serverAPI }: { serverAPI: ServerAPI }) => {
-    const [question, setQuestion] = useState("");
-    const [response, setResponse] = useState("");
-  
-    const handleAsk = async () => {
-      const result = await serverAPI.callPluginMethod("ask_question", {
-        question: question,
-      });
-      setResponse(result && typeof result.result === "string" ? result.result : "Nessuna risposta ricevuta");
-    };
-  
-    return (
-      <PanelSection title="AI-ssistant Deck">
-        <TextField
-          label="Fai una domanda all'AI"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-        />
-        <ButtonItem label="Invia" onClick={handleAsk} />
-        {response && (
-          <div className={staticClasses.Label}>
-            <strong>Risposta:</strong> {response}
-          </div>
-        )}
-      </PanelSection>
-    );
+const AIAssistant = () => {
+  const [input, setInput] = useState("");
+  const [response, setResponse] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleAsk = async () => {
+    if (!input.trim()) return;
+    setLoading(true);
+    try {
+      const result = await call<[question: string], string>("ask_question", input);
+      setResponse(result);
+      setInput("");
+    } catch (error) {
+      setResponse("Errore nella richiesta.");
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
   };
-  
-  export default definePlugin((serverApi: ServerAPI) => {
-    return {
-      title: <div>AI-ssistant Deck</div>, // 👈 lo trasformiamo in elemento React
-      content: <AIAssistant serverAPI={serverApi} />,
-      icon: <i className="fa fa-robot" /> // 👈 anche l’icona va come elemento
-    };
-  });
+
+  return (
+    <PanelSection title="AI‑ssistant Deck">
+      <PanelSectionRow>
+        <TextField label="Domanda" value={input} onChange={(e) => setInput(e.currentTarget.value)} />
+      </PanelSectionRow>
+      <PanelSectionRow>
+        <ButtonItem layout="below" label="Chiedi" onClick={handleAsk} />
+      </PanelSectionRow>
+      {loading && (
+        <PanelSectionRow>
+          <Spinner />
+        </PanelSectionRow>
+      )}
+      {response && (
+        <PanelSectionRow>
+          <div style={{ whiteSpace: "pre-wrap" }}>{response}</div>
+        </PanelSectionRow>
+      )}
+    </PanelSection>
+  );
+};
+
+export default AIAssistant;
