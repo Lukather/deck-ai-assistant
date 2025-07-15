@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PanelSection, PanelSectionRow, TextField, ButtonItem, Spinner } from "@decky/ui";
+import { TextField, ButtonItem, Spinner } from "@decky/ui";
 import { call } from "@decky/api";
 
 const AIAssistant = () => {
@@ -15,7 +15,7 @@ const AIAssistant = () => {
       setResponse(result);
       setInput("");
     } catch (error) {
-      setResponse("Errore nella richiesta.");
+      setResponse("❌ Errore nella richiesta.");
       console.error(error);
     } finally {
       setLoading(false);
@@ -23,24 +23,44 @@ const AIAssistant = () => {
   };
 
   return (
-    <PanelSection title="AI‑ssistant Deck">
-      <PanelSectionRow>
-        <TextField label="Domanda" value={input} onChange={(e) => setInput(e.currentTarget.value)} />
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ButtonItem layout="below" label="Chiedi" onClick={handleAsk} />
-      </PanelSectionRow>
-      {loading && (
-        <PanelSectionRow>
-          <Spinner />
-        </PanelSectionRow>
-      )}
+    <div style={{
+      padding: "24px",
+      display: "flex",
+      flexDirection: "column",
+      gap: "16px",
+      overflowY: "auto",
+      height: "100%",
+      boxSizing: "border-box"
+    }}>
+      <h2 style={{ margin: 0, fontSize: "1.5em" }}>🎮 AI‑ssistant Deck</h2>
+
+      <TextField
+        label="Domanda"
+        value={input}
+        onChange={(e) => setInput(e.currentTarget.value)}
+      />
+
+      <ButtonItem
+        label={loading ? "Chiedo..." : "Chiedi"}
+        layout="below"
+        onClick={handleAsk}
+        disabled={loading || !input.trim()}
+      />
+
+      {loading && <Spinner style={{ marginTop: "8px" }} />}
+
       {response && (
-        <PanelSectionRow>
-          <div style={{ whiteSpace: "pre-wrap" }}>{response}</div>
-        </PanelSectionRow>
+        <div style={{
+          marginTop: "16px",
+          background: "#1f1f1f",
+          padding: "12px",
+          borderRadius: "8px",
+          whiteSpace: "pre-wrap"
+        }}>
+          {response}
+        </div>
       )}
-    </PanelSection>
+    </div>
   );
 };
 
