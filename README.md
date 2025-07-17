@@ -6,8 +6,8 @@
 
 - Integrated React frontend with Decky UI components
 - Python backend with method bridging via Decky Loader
-- Dynamic responses from AI models (OpenAI, Claude, Gemini, etc.)
-- API key saving (upcoming feature)
+- Dynamic responses from AI models (Gemini now, others in the future)
+- API key saving
 
 ## 🧰 Requirements
 
@@ -66,16 +66,20 @@ Email: mail@lukather.net
 - [x] Successfully transferred the plugin files to Steam Deck via SCP
 - [x] Updated plugin name displayed in Decky menu
 - [x] Verified frontend UI displays correctly inside Decky menu
+- [x] Ensure main.py backend is loaded and recognized by Decky Loader
+- [x] Add logging with decky.logger.info() for debugging
+- [x] Confirm communication between frontend and backend via ask_question()
+- [x] Integrate real AI API (Gemini)
+- [x] Added a bubble-chat UI in the AI view
 
 ### 🧩 Tasks To Do
-- [ ] Ensure main.py backend is loaded and recognized by Decky Loader
-- [ ] Add logging with decky.logger.info() for debugging
-- [ ] Confirm communication between frontend and backend via ask_question()
-- [ ] Integrate real AI API (OpenAI, Claude, Gemini, etc.)
 - [ ] Implement secure local storage of API key
 - [ ] Handle frontend states: loading, error, and response
 - [ ] Build a settings interface for user configuration
 - [ ] Add a custom icon for the plugin in the Decky menu
+- [ ] Add more LLMs integrations (ChatGPT, Claude, self-hosted, HuggingFace)
+- [ ] Automatic regcognitions of the game you are playing
+- [ ] Store the chat history
 
 ## 📄 License
 
