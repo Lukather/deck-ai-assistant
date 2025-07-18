@@ -54,7 +54,8 @@ AI-ssistant Deck is designed to integrate with AI providers such as GPT-4, Gemin
 
 **Lorenzo** — Milan, Italy  
 GitHub: [lukather](https://github.com/your-username)  
-Email: mail@lukather.net
+Mastodon: [lukather](https://mastodon.uno/@lukather)
+Newsletter: [lukather](https://news.ilgiocatore.net)
 
 ## 📋 ToDo List
 
