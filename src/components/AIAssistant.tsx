@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { TextField, ButtonItem, Spinner } from "@decky/ui";
 import { call } from "@decky/api";
+import ReactMarkdown from "react-markdown";
+
 
 const AIAssistant = () => {
   const [input, setInput] = useState("");
@@ -78,7 +80,7 @@ const AIAssistant = () => {
               maxWidth: "80%",
               whiteSpace: "pre-wrap"
             }}>
-              {msg.text}
+              {msg.role === "ai" ? <ReactMarkdown>{msg.text}</ReactMarkdown> : msg.text}
             </div>
           </div>
         ))}
