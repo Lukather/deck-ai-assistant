@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { TextField, ButtonItem, Spinner } from "@decky/ui";
 import { call } from "@decky/api";
-import ReactMarkdown from "react-markdown";
 
 const AIAssistant = () => {
   const [input, setInput] = useState("");
@@ -79,7 +78,7 @@ const AIAssistant = () => {
               maxWidth: "80%",
               whiteSpace: "pre-wrap"
             }}>
-              <ReactMarkdown>{msg.text}</ReactMarkdown>
+              {msg.text}
             </div>
           </div>
         ))}
@@ -101,7 +100,7 @@ const AIAssistant = () => {
               maxWidth: "80%",
               whiteSpace: "pre-wrap"
             }}>
-              <ReactMarkdown>{typingText}</ReactMarkdown>
+              {typingText}
             </div>
           </div>
         )}
