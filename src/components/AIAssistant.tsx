@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TextField, Button, Spinner } from "@decky/ui";
 import { call } from "@decky/api";
 import ReactMarkdown from "react-markdown";
@@ -9,6 +9,21 @@ const AIAssistant = () => {
   const [conversation, setConversation] = useState<{ role: "user" | "ai"; text: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [typingText, setTypingText] = useState<string | null>(null);
+  const [activeGame, setActiveGame] = useState<{ appid: number; name: string } | null>(null);
+
+  // Detect active game using SteamClient
+  useEffect(() => {
+    call("log_message", `[AIAssistant] SteamClient: ${typeof window.SteamClient}`);
+    const unregister = window.SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications?.((appState: any) => {
+      call("log_message", `[AIAssistant] AppLifetimeNotification: ${JSON.stringify(appState)}`);
+      if (appState.bRunning) {
+        setActiveGame({ appid: appState.unAppID, name: `AppID: ${appState.unAppID}` });
+      } else {
+        setActiveGame(null);
+      }
+    });
+    return () => unregister && unregister.unregister && unregister.unregister();
+  }, []);
 
   const handleAsk = async () => {
     if (!input.trim()) return;
@@ -54,6 +69,18 @@ const AIAssistant = () => {
       overflowY: "auto"
     }}>
       <h2 style={{ margin: 0, fontSize: "1.5em" }}>🎮 AI‑ssistant Deck</h2>
+
+      {/* Active Game Display */}
+      <div style={{ marginBottom: 16 }}>
+        {activeGame ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontWeight: "bold" }}>🎮 Active Game:</span>
+            <span>{activeGame.name}</span>
+          </div>
+        ) : (
+          <div style={{ color: "#888" }}>No active game detected</div>
+        )}
+      </div>
 
       {/* Conversazione */}
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
