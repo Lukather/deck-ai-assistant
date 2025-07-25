@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TextField, ButtonItem, PanelSection } from "@decky/ui";
+import { TextField, Button, PanelSection } from "@decky/ui";
 import { call, toaster } from "@decky/api";
 import { FaKey, FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 
@@ -50,31 +50,30 @@ const SettingsPage = () => {
   };
 
   return (
-    <div style={{ paddingTop: "56px", padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
-      <PanelSection title="🔐 Impostazioni AI">
+    <div style={{ paddingTop: "52px"}}>
+      <PanelSection title="🔐 AI Settings">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <FaKey size={16} />
           <TextField
             value={apiKey}
             onChange={(e) => setApiKey(e.currentTarget.value)}
             disabled={saving}
-            style={{ flex: 1 }}
+            style={{ flex: 1, minWidth: 320 }}
           />
         </div>
 
-        <ButtonItem
-          label={
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              🔒 <span>{saving ? "Salvataggio..." : "Salva chiave"}</span>
-            </div>
-          }
-          layout="below"
+        <Button
+          style={{ height: 45, display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}
           onClick={handleSave}
           disabled={saving || !apiKey.trim()}
-        />
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            🔒 <span>{saving ? "Saving..." : "Save key"}</span>
+          </span>
+        </Button>
       </PanelSection>
 
-      <PanelSection title="🧠 Stato Gemini">
+      <PanelSection title="🧠 Gemini Status">
         <div style={{
           display: "flex",
           alignItems: "center",
@@ -82,7 +81,7 @@ const SettingsPage = () => {
           color: isKeyValid ? "#22c55e" : "#f87171"
         }}>
           {isKeyValid ? <FaCheckCircle /> : <FaTimesCircle />}
-          {isKeyValid ? "✓ API valida e attiva" : "✗ Chiave non valida o assente"}
+          {isKeyValid ? "✓ API is valid and active" : "✗ Key is invalid or missing"}
         </div>
       </PanelSection>
     </div>

@@ -1,5 +1,5 @@
 import { definePlugin, routerHook } from "@decky/api";
-import { ButtonItem, PanelSection } from "@decky/ui";
+import { Button, PanelSection } from "@decky/ui";
 import { Navigation } from "@decky/ui";
 import { FaCog, FaRobot, FaExpand } from "react-icons/fa";
 import AIAssistant from "./components/AIAssistant";
@@ -15,30 +15,26 @@ export default definePlugin(() => {
     content: (
       <PanelSection title="AI‑ssistant Plugin">
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <ButtonItem layout="below"
-          label={
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <FaCog />
-              <span>AI Settings</span>
-            </div>
-          }
+        <Button
+          style={{ height: 45, display: 'flex', alignItems: 'center', gap: 8 }}
           onClick={() => {
             Navigation.Navigate("/ai-settings");
             Navigation.CloseSideMenus();
           }}
-        />
-        <ButtonItem layout="below"
-          label={
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <FaExpand />
-              <strong>Open AI Assistant</strong>
-            </div>
-          }
+        >
+          <FaCog style={{ marginRight: 8 }} />
+          AI Settings
+        </Button>
+        <Button
+          style={{ height: 45, display: 'flex', alignItems: 'center', gap: 8 }}
           onClick={() => {
             Navigation.Navigate("/ai-assistant");
             Navigation.CloseSideMenus();
           }}
-        />
+        >
+          <FaExpand style={{ marginRight: 8 }} />
+          Open AI Assistant
+        </Button>
         </div>
       </PanelSection>
     ),
