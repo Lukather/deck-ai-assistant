@@ -3,6 +3,8 @@ import os
 import json
 import asyncio
 import httpx
+import traceback
+from httpx import ReadTimeout
 
 CONFIG_PATH = os.path.expanduser("~/.aiassistant_config.json")
 
@@ -14,9 +16,11 @@ class Plugin:
             if isinstance(payload, dict):
                 question = payload.get('question', '')
                 game = payload.get('game', None)
+                conversation = payload.get('conversation', None)
             else:
                 question = payload
                 game = None
+                conversation = None
 
             # 🔍 Controllo domanda
             if not question or not isinstance(question, str) or not question.strip():
@@ -37,11 +41,26 @@ class Plugin:
 
             decky.logger.info(f"Chiave API usata: {repr(api_key)}") # 🔍 Log chiave API
 
-            # Add game context to the prompt if available
-            if game and isinstance(game, dict) and game.get('name'):
-                prompt = f"[Game: {game['name']} (AppID: {game['appid']})]\n{question.strip()}"
+            # Build prompt from conversation if available
+            if conversation and isinstance(conversation, list) and len(conversation) > 0:
+                # Format: User: ...\nAI: ...\n etc.
+                prompt_lines = []
+                if game and isinstance(game, dict) and game.get('name'):
+                    prompt_lines.append(f"[Game: {game['name']} (AppID: {game['appid']})]")
+                for msg in conversation:
+                    role = msg.get('role', '')
+                    text = msg.get('text', '')
+                    if role == 'user':
+                        prompt_lines.append(f"User: {text}")
+                    elif role == 'ai':
+                        prompt_lines.append(f"AI: {text}")
+                prompt = "\n".join(prompt_lines)
             else:
-                prompt = question.strip()
+                # Fallback to old behavior
+                if game and isinstance(game, dict) and game.get('name'):
+                    prompt = f"[Game: {game['name']} (AppID: {game['appid']})]\n{question.strip()}"
+                else:
+                    prompt = question.strip()
 
             # Preparazione richiesta Gemini
             headers = {
@@ -62,8 +81,12 @@ class Plugin:
 
             decky.logger.info(f"Richiesta Gemini: {gemini_payload}")
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, json=gemini_payload)
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(url, headers=headers, json=gemini_payload)
+            except ReadTimeout:
+                decky.logger.error("Timeout while waiting for Gemini API response.")
+                return "Timeout: The AI service took too long to respond. Please try again."
 
             decky.logger.info(f"Risposta grezza: {response.text}")
 
@@ -78,7 +101,7 @@ class Plugin:
             return output
 
         except Exception as e:
-            decky.logger.error(f"Errore ask_question: {str(e)}")
+            decky.logger.error(f"Errore ask_question: {str(e)}\n{traceback.format_exc()}")
             return f"Errore nella richiesta: {str(e)}"
 
     async def save_api_key(self, key: str) -> str:

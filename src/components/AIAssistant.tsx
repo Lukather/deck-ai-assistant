@@ -60,19 +60,34 @@ const AIAssistant = () => {
     };
   }, [games]);
 
+  // Load conversation from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("chatHistory");
+    if (saved) {
+      setConversation(JSON.parse(saved));
+    }
+  }, []);
+
+  // Save conversation to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("chatHistory", JSON.stringify(conversation));
+  }, [conversation]);
+
   const handleAsk = async () => {
     if (!input.trim()) return;
     const question = input.trim();
 
     setLoading(true);
     setTypingText(null);
-    setConversation(prev => [...prev, { role: "user", text: question }]);
+    // Prepare the new conversation including the new user message
+    const updatedConversation = [...conversation, { role: "user" as const, text: question }];
+    setConversation(updatedConversation);
     setInput("");
 
     try {
       const payload = activeGame
-        ? { question, game: activeGame }
-        : { question };
+        ? { question, game: activeGame, conversation: updatedConversation }
+        : { question, conversation: updatedConversation };
       const result = await call("ask_question", payload);
       const aiText = typeof result === "string" ? result : "❌ Error: Invalid AI response.";
 
@@ -120,6 +135,18 @@ const AIAssistant = () => {
           <div style={{ color: "#888" }}>No active game detected</div>
         )}
       </div>
+
+      {/* Clear Chat History Button */}
+      <Button
+        onClick={() => {
+          setConversation([]);
+          localStorage.removeItem("chatHistory");
+        }}
+        style={{ alignSelf: "flex-end", marginBottom: 8 }}
+        disabled={loading || conversation.length === 0}
+      >
+        Clear Chat
+      </Button>
 
       {/* Conversazione */}
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
