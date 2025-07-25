@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { TextField, ButtonItem, Spinner } from "@decky/ui";
+import { TextField, Button, Spinner } from "@decky/ui";
 import { call } from "@decky/api";
-//import ReactMarkdown from "react-markdown";
+import ReactMarkdown from "react-markdown";
 
 
 const AIAssistant = () => {
@@ -80,7 +80,11 @@ const AIAssistant = () => {
               maxWidth: "80%",
               whiteSpace: "pre-wrap"
             }}>
-               {msg.text}
+               {msg.role === "ai" ? (
+                 <ReactMarkdown>{msg.text}</ReactMarkdown>
+               ) : (
+                 msg.text
+               )}
             </div>
           </div>
         ))}
@@ -102,7 +106,7 @@ const AIAssistant = () => {
               maxWidth: "80%",
               whiteSpace: "pre-wrap"
             }}>
-              {typingText}
+              <ReactMarkdown>{typingText}</ReactMarkdown>
             </div>
           </div>
         )}
@@ -117,12 +121,13 @@ const AIAssistant = () => {
       />
 
       {/* Pulsante invio */}
-      <ButtonItem
-        label={loading ? "Asking..." : "Ask"}
-        layout="below"
+      <Button
         onClick={handleAsk}
         disabled={loading || !input.trim()}
-      />
+        style={{ height: "45px", marginTop: 8, width: "120px" }}
+      >
+        {loading ? "Asking..." : "Ask"}
+      </Button>
 
       {loading && <Spinner style={{ marginTop: "8px" }} />}
     </div>
