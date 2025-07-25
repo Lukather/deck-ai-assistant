@@ -8,8 +8,16 @@ CONFIG_PATH = os.path.expanduser("~/.aiassistant_config.json")
 
 class Plugin:
     
-    async def ask_question(self, question: str) -> str:
+    async def ask_question(self, payload) -> str:
         try:
+            # Support both string and dict payloads
+            if isinstance(payload, dict):
+                question = payload.get('question', '')
+                game = payload.get('game', None)
+            else:
+                question = payload
+                game = None
+
             # 🔍 Controllo domanda
             if not question or not isinstance(question, str) or not question.strip():
                 decky.logger.warning("Domanda non valida o vuota.")
@@ -28,28 +36,34 @@ class Plugin:
                 return "Chiave API non impostata."
 
             decky.logger.info(f"Chiave API usata: {repr(api_key)}") # 🔍 Log chiave API
-            
+
+            # Add game context to the prompt if available
+            if game and isinstance(game, dict) and game.get('name'):
+                prompt = f"[Game: {game['name']} (AppID: {game['appid']})]\n{question.strip()}"
+            else:
+                prompt = question.strip()
+
             # Preparazione richiesta Gemini
             headers = {
                 "Content-Type": "application/json"
             }
 
-            payload = {
+            gemini_payload = {
                 "contents": [
                     {
-                    "parts": [
-                        { "text": question.strip() }
-                    ]
+                        "parts": [
+                            { "text": prompt }
+                        ]
                     }
                 ]
             }
 
             url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + api_key
 
-            decky.logger.info(f"Richiesta Gemini: {payload}")
+            decky.logger.info(f"Richiesta Gemini: {gemini_payload}")
 
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, json=payload)
+                response = await client.post(url, headers=headers, json=gemini_payload)
 
             decky.logger.info(f"Risposta grezza: {response.text}")
 

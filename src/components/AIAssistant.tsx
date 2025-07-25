@@ -70,18 +70,22 @@ const AIAssistant = () => {
     setInput("");
 
     try {
-      const result = await call<[string], string>("ask_question", question);
+      const payload = activeGame
+        ? { question, game: activeGame }
+        : { question };
+      const result = await call("ask_question", payload);
+      const aiText = typeof result === "string" ? result : "❌ Error: Invalid AI response.";
 
       // Simula digitazione carattere per carattere
       let temp = "";
       setTypingText("");
-      for (const char of result) {
+      for (const char of aiText) {
         temp += char;
         setTypingText(temp);
         await new Promise(res => setTimeout(res, 30)); // Velocità digitazione
       }
 
-      setConversation(prev => [...prev, { role: "ai", text: result }]);
+      setConversation(prev => [...prev, { role: "ai", text: aiText }]);
       setTypingText(null);
     } catch (err) {
       setTypingText(null);
