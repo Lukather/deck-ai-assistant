@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
-import { TextField, Button, Spinner } from "@decky/ui";
+import { TextField, Button, Spinner, Router } from "@decky/ui";
 import { call } from "@decky/api";
+import {
+  getInstalledGames,
+  getAllGames,
+  getGameNameByAppId,
+  GameEntry,
+} from "../utils/gameNameMap";
 import ReactMarkdown from "react-markdown";
 
 
@@ -10,20 +16,49 @@ const AIAssistant = () => {
   const [loading, setLoading] = useState(false);
   const [typingText, setTypingText] = useState<string | null>(null);
   const [activeGame, setActiveGame] = useState<{ appid: number; name: string } | null>(null);
+  const [games, setGames] = useState<GameEntry[]>([]);
 
-  // Detect active game using SteamClient
+  // Fetch games on mount
   useEffect(() => {
-    call("log_message", `[AIAssistant] SteamClient: ${typeof window.SteamClient}`);
-    const unregister = window.SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications?.((appState: any) => {
-      call("log_message", `[AIAssistant] AppLifetimeNotification: ${JSON.stringify(appState)}`);
-      if (appState.bRunning) {
-        setActiveGame({ appid: appState.unAppID, name: `AppID: ${appState.unAppID}` });
+    getInstalledGames().then((installed) => {
+      if (installed.length > 0) {
+        setGames(installed);
       } else {
-        setActiveGame(null);
+        setGames(getAllGames());
       }
     });
-    return () => unregister && unregister.unregister && unregister.unregister();
   }, []);
+
+  // Detect active game using Router.MainRunningApp and SteamClient events, mapping AppID to name
+  useEffect(() => {
+    let unregister: any = null;
+    let cancelled = false;
+
+    // On mount, use Router.MainRunningApp if available
+    if (Router.MainRunningApp) {
+      const appid = Number(Router.MainRunningApp.appid);
+      const name = getGameNameByAppId(appid, games);
+      setActiveGame({ appid, name });
+    }
+
+    // Listen for game session changes
+    if (window.SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications) {
+      unregister = window.SteamClient.GameSessions.RegisterForAppLifetimeNotifications((appState: any) => {
+        if (cancelled) return;
+        if (appState.bRunning) {
+          const appid = Number(appState.unAppID);
+          const name = getGameNameByAppId(appid, games);
+          setActiveGame({ appid, name });
+        } else {
+          setActiveGame(null);
+        }
+      });
+    }
+    return () => {
+      cancelled = true;
+      if (unregister && unregister.unregister) unregister.unregister();
+    };
+  }, [games]);
 
   const handleAsk = async () => {
     if (!input.trim()) return;
@@ -43,7 +78,7 @@ const AIAssistant = () => {
       for (const char of result) {
         temp += char;
         setTypingText(temp);
-        await new Promise(res => setTimeout(res, 20)); // Velocità digitazione
+        await new Promise(res => setTimeout(res, 30)); // Velocità digitazione
       }
 
       setConversation(prev => [...prev, { role: "ai", text: result }]);
@@ -75,7 +110,7 @@ const AIAssistant = () => {
         {activeGame ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontWeight: "bold" }}>🎮 Active Game:</span>
-            <span>{activeGame.name}</span>
+            <span>{activeGame.name ? activeGame.name : `AppID: ${activeGame.appid}`}</span>
           </div>
         ) : (
           <div style={{ color: "#888" }}>No active game detected</div>
@@ -153,8 +188,8 @@ const AIAssistant = () => {
         disabled={loading || !input.trim()}
         style={{ height: "45px", marginTop: 8, width: "120px" }}
       >
-        {loading ? "Asking..." : "Ask"}
-      </Button>
+        {loading ? "Asking..." : "Send"}
+      </Button> 
 
       {loading && <Spinner style={{ marginTop: "8px" }} />}
     </div>

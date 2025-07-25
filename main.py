@@ -88,3 +88,18 @@ class Plugin:
         except Exception as e:
             decky.logger.error(f"Errore lettura chiave: {str(e)}")
             return ""
+
+    async def log_message(self, message: str) -> str:
+        """
+        Log a message from the frontend to the Decky Loader log file.
+        Args:
+            message (str): The message to log.
+        Returns:
+            str: Confirmation message.
+        """
+        try:
+            decky.logger.info(f"Frontend: {message}")
+            return "Message logged."
+        except Exception as e:
+            decky.logger.error(f"Failed to log message: {str(e)}")
+            return f"Failed to log message: {str(e)}"
