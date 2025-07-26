@@ -1,2 +1,8 @@
 node_modules
 .git
+assets
+.venv
+.vscode
+defaults
+dist
+py_modules

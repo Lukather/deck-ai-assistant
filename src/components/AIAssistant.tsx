@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { TextField, Button, Spinner, Router } from "@decky/ui";
+import { Button, Spinner, Router } from "@decky/ui";
 import { call } from "@decky/api";
 import {
   getInstalledGames,
@@ -8,7 +8,7 @@ import {
   GameEntry,
 } from "../utils/gameNameMap";
 import ReactMarkdown from "react-markdown";
-
+import { FaMicrophone, FaMicrophoneSlash, FaStop } from "react-icons/fa";
 
 const AIAssistant = () => {
   const [input, setInput] = useState("");
@@ -17,6 +17,24 @@ const AIAssistant = () => {
   const [typingText, setTypingText] = useState<string | null>(null);
   const [activeGame, setActiveGame] = useState<{ appid: number; name: string } | null>(null);
   const [games, setGames] = useState<GameEntry[]>([]);
+  const [isListening, setIsListening] = useState(false);
+  const [speechStatus, setSpeechStatus] = useState<string>("");
+
+  // Check speech recognition status on mount
+  useEffect(() => {
+    const checkSpeechStatus = async () => {
+      try {
+        const status = await call<[], string>("get_speech_status");
+        setSpeechStatus(status);
+        call("log_message", `Speech status: ${status}`);
+      } catch (error) {
+        call("log_message", `Failed to get speech status: ${error}`);
+        setSpeechStatus("Speech recognition not available");
+      }
+    };
+    
+    checkSpeechStatus();
+  }, []);
 
   // Fetch games on mount
   useEffect(() => {
@@ -77,9 +95,10 @@ const AIAssistant = () => {
     if (!input.trim()) return;
     const question = input.trim();
 
+    call("log_message", `Sending question: ${question}`);
     setLoading(true);
     setTypingText(null);
-    // Prepare the new conversation including the new user message
+    
     const updatedConversation = [...conversation, { role: "user" as const, text: question }];
     setConversation(updatedConversation);
     setInput("");
@@ -90,6 +109,8 @@ const AIAssistant = () => {
         : { question, conversation: updatedConversation };
       const result = await call("ask_question", payload);
       const aiText = typeof result === "string" ? result : "❌ Error: Invalid AI response.";
+
+      call("log_message", `AI response received: ${aiText.substring(0, 100)}...`);
 
       // Simula digitazione carattere per carattere
       let temp = "";
@@ -103,11 +124,52 @@ const AIAssistant = () => {
       setConversation(prev => [...prev, { role: "ai", text: aiText }]);
       setTypingText(null);
     } catch (err) {
+      call("log_message", `Error in handleAsk: ${err}`);
       setTypingText(null);
       setConversation(prev => [...prev, { role: "ai", text: "❌ Error in the request." }]);
-      console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startListening = async () => {
+    if (!isListening) {
+      try {
+        call("log_message", "Starting speech recognition...");
+        const result = await call<[], string>("start_speech_recognition");
+        call("log_message", `Start result: ${result}`);
+        if (result.includes("started")) {
+          setIsListening(true);
+        } else {
+          call("log_message", `Failed to start: ${result}`);
+        }
+      } catch (error) {
+        call("log_message", `Failed to start speech recognition: ${error}`);
+        setIsListening(false);
+      }
+    } else {
+      call("log_message", "Already listening");
+    }
+  };
+
+  const stopListening = async () => {
+    if (isListening) {
+      try {
+        call("log_message", "Stopping speech recognition...");
+        const transcript = await call<[], string>("stop_speech_recognition");
+        call("log_message", `Stop result: ${transcript}`);
+        
+        if (transcript && !transcript.includes("Failed") && !transcript.includes("No speech")) {
+          setInput(prev => prev + transcript);
+        }
+        
+        setIsListening(false);
+      } catch (error) {
+        call("log_message", `Failed to stop speech recognition: ${error}`);
+        setIsListening(false);
+      }
+    } else {
+      call("log_message", "Not currently listening");
     }
   };
 
@@ -122,6 +184,16 @@ const AIAssistant = () => {
       boxSizing: "border-box",
       overflowY: "auto"
     }}>
+      {/* CSS for pulse animation */}
+      <style>
+        {`
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
+        `}
+      </style>
+
       <h2 style={{ margin: 0, fontSize: "1.5em" }}>🎮 AI‑ssistant Deck</h2>
 
       {/* Active Game Display */}
@@ -206,12 +278,117 @@ const AIAssistant = () => {
       </div>
 
       {/* Input domanda */}
-      <TextField
-        label="Question"
-        value={input}
-        onChange={(e) => setInput(e.currentTarget.value)}
-        disabled={loading}
-      />
+      <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          <label style={{ 
+            fontSize: "14px", 
+            color: "#6b7280", 
+            marginBottom: "4px",
+            fontWeight: "500"
+          }}>
+            Question
+          </label>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={loading}
+            placeholder="Type your question here..."
+            style={{
+              width: "90%",
+              height: "80px",
+              padding: "12px",
+              border: "1px solid #374151",
+              borderRadius: "8px",
+              backgroundColor: "#1f2937",
+              color: "#f9fafb",
+              fontSize: "14px",
+              resize: "none",
+              fontFamily: "inherit",
+              outline: "none"
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleAsk();
+              }
+            }}
+          />
+        </div>
+        
+        {/* Microphone Button */}
+        {speechStatus.includes("Ready") && (
+          <Button
+            onClick={isListening ? stopListening : startListening}
+            disabled={loading}
+            style={{
+              paddingTop: "12px",
+              height: "80px",
+              width: "45px",
+              minWidth: "45px",
+              backgroundColor: isListening ? "#ef4444" : "#3b82f6",
+              border: "none",
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.2s ease",
+              alignSelf: "stretch"
+            }}
+          >
+            {isListening ? (
+              <FaStop size={16} color="white" />
+            ) : (
+              <FaMicrophone size={16} color="white" />
+            )}
+          </Button>
+        )}
+      </div>
+
+      {/* Speech Recognition Status */}
+      {speechStatus.includes("Ready") && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          fontSize: "0.9em",
+          color: isListening ? "#ef4444" : "#6b7280"
+        }}>
+          {isListening ? (
+            <>
+              <div style={{
+                width: "8px",
+                height: "8px",
+                backgroundColor: "#ef4444",
+                borderRadius: "50%",
+                animation: "pulse 1.5s infinite"
+              }} />
+              Listening... Speak now
+            </>
+          ) : (
+            <>
+              <FaMicrophoneSlash size={12} />
+              Click microphone to speak
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Speech Recognition Not Supported Warning */}
+      {!speechStatus.includes("Ready") && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          fontSize: "0.9em",
+          color: "#f59e0b",
+          padding: "8px",
+          backgroundColor: "#1f2937",
+          borderRadius: "6px",
+          border: "1px solid #f59e0b"
+        }}>
+          ⚠️ {speechStatus}
+        </div>
+      )}
 
       {/* Pulsante invio */}
       <Button
@@ -219,8 +396,8 @@ const AIAssistant = () => {
         disabled={loading || !input.trim()}
         style={{ height: "45px", marginTop: 8, width: "120px" }}
       >
-        {loading ? "Asking..." : "Send"}
-      </Button> 
+        {loading ? "Asking..." : "Ask"}
+      </Button>
 
       {loading && <Spinner style={{ marginTop: "8px" }} />}
     </div>

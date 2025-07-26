@@ -1,5 +1,5 @@
 # This directory is a Syncthing folder marker.
 # Do not delete.
 
-folderID: mgxwy-mxzfx
-created: 2025-07-14T23:06:13+02:00
+folderID: gwi7s-n2wae
+created: 2025-07-26T17:47:12+02:00

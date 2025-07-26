@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deck-ai-assistant"
+version = "1.0.0"
+description = "AI assistant for Steam Deck with speech recognition"
+authors = [{name = "Lorenzo Strambi", email = "mail@lukather.net"}]
+license = {text = "GNU GPL V2"}
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "vosk>=0.3.45",
+    "pyaudio>=0.2.11",
+    "httpx>=0.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "flake8>=5.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["*"]
+exclude = ["tests*", "dist*", "build*", "*.egg-info*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"] 

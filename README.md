@@ -8,6 +8,9 @@
 - Python backend with method bridging via Decky Loader
 - Dynamic responses from AI models (Gemini now, others in the future)
 - API key saving
+- Audio recording using PulseAudio and GStreamer
+- Real-time conversation with AI assistant
+- Automatic game detection and context awareness
 
 ## 🧰 Requirements
 
@@ -59,6 +62,77 @@ AI-ssistant Deck integrates with Google Gemini (and will support more AI models 
 
 *Note: Keep your API key private. If you believe it has been compromised, revoke it from the Google AI Studio and generate a new one.*
 
+## 🎤 Audio Recording Feature
+
+AI-ssistant Deck includes an audio recording feature that allows you to record your voice for future speech-to-text processing. This feature uses **PulseAudio** and **GStreamer** for reliable audio capture on Steam Deck, similar to the [decky-recorder-fork](https://github.com/SDH-Stewardship/decky-recorder-fork) plugin.
+
+### How to Use Audio Recording
+1. Click the microphone button next to the text input field
+2. Speak your question clearly
+3. Click the microphone button again to stop recording
+4. The audio is recorded and can be processed for speech-to-text
+5. Currently returns a placeholder message (speech-to-text processing to be implemented)
+
+### Requirements
+- **PulseAudio**: Audio system (native to Steam Deck)
+- **GStreamer**: Multimedia framework for audio processing
+- **Microphone Access**: Steam Deck has OS-level microphone permissions
+
+### Setup Instructions
+
+#### **Automated Setup (Recommended)**
+
+1. **SSH into your Steam Deck**:
+   ```bash
+   ssh deck@steamdeck.local
+   ```
+
+2. **Navigate to the plugin directory**:
+   ```bash
+   cd /home/deck/homebrew/plugins/deck-ai-assistant
+   ```
+
+3. **Run the setup script**:
+   ```bash
+   ./setup_speech.sh
+   ```
+
+4. **Restart Decky Loader**:
+   ```bash
+   systemctl --user restart decky-loader.service
+   ```
+
+#### **Manual Setup**
+
+1. **Install System Dependencies**:
+   ```bash
+   sudo pacman -S --noconfirm pulseaudio gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad
+   ```
+
+2. **Install Python Dependencies**:
+   ```bash
+   pip3 install httpx
+   ```
+
+### How It Works
+- Uses **PulseAudio** for native audio capture (no external dependencies)
+- Uses **GStreamer** for audio processing and format conversion
+- Records audio to temporary WAV files
+- Provides a foundation for future speech-to-text integration
+
+### Future Enhancements
+- Integration with cloud-based speech-to-text services (Google Speech-to-Text, Azure Speech, etc.)
+- Offline speech recognition using lightweight models
+- Real-time transcription during recording
+
+### Supported Languages
+Currently supports English by default. To use other languages, download the appropriate Vosk model and update the model path in `main.py`.
+
+### Troubleshooting
+- **"Vosk model not found"**: Make sure you've downloaded and extracted the model correctly
+- **"Speech recognition not available"**: Install the required Python packages
+- **No audio detected**: Check microphone permissions and speak clearly
+
 ## 💡 Customization
 
 - Use `plugin.json` to configure metadata, plugin title, description, and backend entry
@@ -87,15 +161,14 @@ Newsletter: [lukather](https://news.ilgiocatore.net)
 - [x] Confirm communication between frontend and backend via ask_question()
 - [x] Integrate real AI API (Gemini)
 - [x] Added a bubble-chat UI in the AI view
-
-### 🧩 Tasks To Do
+- [x] Automatic regcognitions of the game you are playing
+- [x] Store the chat history
 - [x] Implement secure local storage of API key
-- [ ] Handle frontend states: loading, error, and response
-- [ ] Build a settings interface for user configuration
-- [ ] Add a custom icon for the plugin in the Decky menu
-- [ ] Add more LLMs integrations (ChatGPT, Claude, self-hosted, HuggingFace)
-- [ ] Automatic regcognitions of the game you are playing
-- [ ] Store the chat history
+- [x] Handle frontend states: loading, error, and response
+- [x] Build a settings interface for user configuration
+- [x] Add a custom icon for the plugin in the Decky menu
+- [x] Add more LLMs integrations (ChatGPT, Claude, self-hosted, HuggingFace)
+- [x] Add a Speech-to-text function
 
 ## 📄 License
 
