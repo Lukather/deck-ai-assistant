@@ -1,8 +1,8 @@
 {
-    "deckip"    : "steamdeck.local",
+    "deckip"    : "10.0.0.162",
     "deckport"  : "22",
     "deckuser"  : "deck",
-    "deckpass"  : "ssap",
+    "deckpass"  : "favati",
     "deckkey"   : "-i ${env:HOME}/.ssh/id_rsa",
     "deckdir"   : "/home/deck",
     "pluginname": "Example Plugin",
