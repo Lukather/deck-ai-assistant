@@ -6,8 +6,8 @@
   "main": "main.py",
   "api_version": 1,
   "publish": {
-    "tags": ["template", "root"],
-    "description": "Decky example plugin.",
+    "tags": ["ai", "root"],
+    "description": "AI assistant for the Steam Deck",
     "image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
   }
 }

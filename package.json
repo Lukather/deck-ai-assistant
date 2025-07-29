@@ -1,7 +1,7 @@
 {
   "name": "deck-ai-assistant",
-  "version": "1.0.0",
-  "description": "Un assistente AI per Steam Deck basato su Decky e TypeScript",
+  "version": "0.0.1",
+  "description": "An AI assistant for Steam Deck",
   "type": "module",
   "scripts": {
     "build": "rollup -c",
