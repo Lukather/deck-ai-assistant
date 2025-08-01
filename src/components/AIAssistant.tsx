@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { TextField, Button, Spinner, Router } from "@decky/ui";
 import { call } from "@decky/api";
 import {
@@ -8,6 +8,7 @@ import {
   GameEntry,
 } from "../utils/gameNameMap";
 import ReactMarkdown from "react-markdown";
+import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
 
 
 const AIAssistant = () => {
@@ -17,6 +18,9 @@ const AIAssistant = () => {
   const [typingText, setTypingText] = useState<string | null>(null);
   const [activeGame, setActiveGame] = useState<{ appid: number; name: string } | null>(null);
   const [games, setGames] = useState<GameEntry[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Fetch games on mount
   useEffect(() => {
@@ -73,6 +77,57 @@ const AIAssistant = () => {
     localStorage.setItem("chatHistory", JSON.stringify(conversation));
   }, [conversation]);
 
+  // Initialize speech recognition
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setSpeechSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      
+      recognition.onstart = () => {
+        setIsRecording(true);
+      };
+      
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        if (finalTranscript) {
+          setInput(prev => prev + finalTranscript);
+        }
+      };
+      
+      recognition.onend = () => {
+        setIsRecording(false);
+      };
+      
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+      };
+      
+      recognitionRef.current = recognition;
+    }
+    
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
+
   const handleAsk = async () => {
     if (!input.trim()) return;
     const question = input.trim();
@@ -108,6 +163,19 @@ const AIAssistant = () => {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVoiceInput = () => {
+    if (!speechSupported || !recognitionRef.current) {
+      console.warn('Speech recognition not supported');
+      return;
+    }
+
+    if (isRecording) {
+      recognitionRef.current.stop();
+    } else {
+      recognitionRef.current.start();
     }
   };
 
@@ -205,15 +273,48 @@ const AIAssistant = () => {
         )}
       </div>
 
-      {/* Input domanda */}
-      <TextField
-        label="Question"
-        value={input}
-        onChange={(e) => setInput(e.currentTarget.value)}
-        disabled={loading}
-      />
+      {/* Input section with voice button */}
+      <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <TextField
+            label="Question"
+            value={input}
+            onChange={(e) => setInput(e.currentTarget.value)}
+            disabled={loading}
+          />
+        </div>
+        
+        {speechSupported && (
+          <Button
+            onClick={handleVoiceInput}
+            disabled={loading}
+            style={{ 
+              height: "40px", 
+              width: "45px", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center",
+              backgroundColor: isRecording ? "#dc2626" : undefined
+            }}
+          >
+            {isRecording ? <FaMicrophoneSlash /> : <FaMicrophone />}
+          </Button>
+        )}
+      </div>
 
-      {/* Pulsante invio */}
+      {/* Status indicator for recording */}
+      {isRecording && (
+        <div style={{ 
+          color: "#dc2626", 
+          fontSize: "0.9em", 
+          textAlign: "center",
+          fontWeight: "bold"
+        }}>
+          🔴 Recording... Speak now
+        </div>
+      )}
+
+      {/* Send button */}
       <Button
         onClick={handleAsk}
         disabled={loading || !input.trim()}
