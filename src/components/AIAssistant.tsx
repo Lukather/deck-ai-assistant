@@ -38,6 +38,9 @@ const AIAssistant = () => {
     let unregister: any = null;
     let cancelled = false;
 
+    // Only proceed if games array has been loaded
+    if (games.length === 0) return;
+
     // On mount, use Router.MainRunningApp if available
     if (Router.MainRunningApp) {
       const appid = Number(Router.MainRunningApp.appid);
@@ -64,6 +67,14 @@ const AIAssistant = () => {
     };
   }, [games]);
 
+  // Update active game name when games list is loaded (in case game was detected before games were fetched)
+  useEffect(() => {
+    if (games.length > 0 && activeGame && activeGame.name.startsWith('AppID:')) {
+      const name = getGameNameByAppId(activeGame.appid, games);
+      setActiveGame({ appid: activeGame.appid, name });
+    }
+  }, [games, activeGame]);
+
   // Load conversation from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem("chatHistory");
@@ -77,55 +88,15 @@ const AIAssistant = () => {
     localStorage.setItem("chatHistory", JSON.stringify(conversation));
   }, [conversation]);
 
-  // Initialize speech recognition
+  // Initialize backend voice recording  
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      setSpeechSupported(true);
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-      
-      recognition.onstart = () => {
-        setIsRecording(true);
-      };
-      
-      recognition.onresult = (event) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-        
-        if (finalTranscript) {
-          setInput(prev => prev + finalTranscript);
-        }
-      };
-      
-      recognition.onend = () => {
-        setIsRecording(false);
-      };
-      
-      recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setIsRecording(false);
-      };
-      
-      recognitionRef.current = recognition;
-    }
-    
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
+    const initVoice = async () => {
+      await call("log_message", "Initializing backend voice recording...");
+      setSpeechSupported(true); // Always supported via backend
+      await call("log_message", "Backend voice recording initialized successfully");
     };
+
+    initVoice();
   }, []);
 
   const handleAsk = async () => {
@@ -166,16 +137,38 @@ const AIAssistant = () => {
     }
   };
 
-  const handleVoiceInput = () => {
-    if (!speechSupported || !recognitionRef.current) {
-      console.warn('Speech recognition not supported');
-      return;
-    }
-
-    if (isRecording) {
-      recognitionRef.current.stop();
-    } else {
-      recognitionRef.current.start();
+  const handleVoiceInput = async () => {
+    await call("log_message", `Voice button clicked - isRecording: ${isRecording}`);
+    
+    try {
+      if (isRecording) {
+        await call("log_message", "Stopping backend voice recording...");
+        setIsRecording(false);
+        
+        // Call backend to stop recording and get transcription
+        const transcription = await call("stop_voice_recording") as string;
+        await call("log_message", `Backend transcription result: "${transcription}"`);
+        
+        if (transcription && typeof transcription === 'string' && !transcription.startsWith("Error")) {
+          setInput(prev => prev + transcription + ' ');
+          await call("log_message", "Added transcription to input field");
+        }
+      } else {
+        await call("log_message", "Starting backend voice recording...");
+        setIsRecording(true);
+        
+        // Call backend to start recording
+        const result = await call("start_voice_recording") as string;
+        await call("log_message", `Backend start result: "${result}"`);
+        
+        if (result && typeof result === 'string' && result.startsWith("Error")) {
+          setIsRecording(false);
+          await call("log_message", "Failed to start backend recording");
+        }
+      }
+    } catch (error) {
+      await call("log_message", `Error in handleVoiceInput: ${error}`);
+      setIsRecording(false);
     }
   };
 

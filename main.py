@@ -140,3 +140,31 @@ class Plugin:
         except Exception as e:
             decky.logger.error(f"Failed to log message: {str(e)}")
             return f"Failed to log message: {str(e)}"
+
+    async def start_voice_recording(self) -> str:
+        """
+        Start voice recording using system audio tools.
+        Returns:
+            str: Status message.
+        """
+        try:
+            decky.logger.info("Starting voice recording...")
+            # TODO: Implement audio capture
+            return "Voice recording started (not implemented yet)"
+        except Exception as e:
+            decky.logger.error(f"Error starting voice recording: {str(e)}")
+            return f"Error: {str(e)}"
+
+    async def stop_voice_recording(self) -> str:
+        """
+        Stop voice recording and return transcribed text.
+        Returns:
+            str: Transcribed text or error message.
+        """
+        try:
+            decky.logger.info("Stopping voice recording...")
+            # TODO: Implement audio processing and speech recognition
+            return "This is a test transcription (not implemented yet)"
+        except Exception as e:
+            decky.logger.error(f"Error stopping voice recording: {str(e)}")
+            return f"Error: {str(e)}"
