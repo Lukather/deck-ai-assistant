@@ -1,6 +1,6 @@
 ### I'm writing this plugin with the help of AI (Mainly Cursor and Claude Code). I think AI (LLMs) is a great helping tool, I understand and very well know the ethical implications and I'm actively working with some communities to have laws and rules to be approved (mainly in EU, where I live). I'm also working to have an homelab and run my own Opensource LLM engine and model offline, it will not as good as Claude Code and co. but at least I will be a little more relieved to not participate in the un-ethical rush for the money. We can discuss on Mastodon, if you want @lukather@mastodon.uno
 
-Many many thanks to @cboiangiu I've used his plugin as a learning object for the "speech-to-text- part of my plugin https://github.com/cboiangiu/decky-dictation
+Many many thanks to [@cboiangiu](https://github.com/cboiangiu) I've used his plugin as a learning object for the "speech-to-text- part of my plugin https://github.com/cboiangiu/decky-dictation
 
 # AI-ssistant Deck
 
@@ -58,3 +58,4 @@ Mastodon: [@lukather](https://mastodon.uno/@lukather)
 
 
 GNU GPL v2 License
+
