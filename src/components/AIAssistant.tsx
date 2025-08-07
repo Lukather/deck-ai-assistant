@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { TextField, Button, Spinner, Router } from "@decky/ui";
 import { call } from "@decky/api";
 import {
@@ -20,7 +20,6 @@ const AIAssistant = () => {
   const [games, setGames] = useState<GameEntry[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Fetch games on mount
   useEffect(() => {
@@ -156,6 +155,14 @@ const AIAssistant = () => {
       } else {
         await call("log_message", "Starting backend voice recording...");
         setIsRecording(true);
+        
+        // First test if we can call voice methods at all
+        try {
+          const testResult = await call("test_voice_method") as string;
+          await call("log_message", `Test method result: "${testResult}"`);
+        } catch (testError) {
+          await call("log_message", `Test method error: ${testError}`);
+        }
         
         // Call backend to start recording
         const result = await call("start_voice_recording") as string;
