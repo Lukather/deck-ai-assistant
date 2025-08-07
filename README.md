@@ -1,22 +1,24 @@
+### I'm writing this plugin with the help of AI (Mainly Cursor and Claude Code). I think AI (LLMs) is a great helping tool, I understand and very well know the ethical implications and I'm actively working with some communities to have laws and rules to be approved (mainly in EU, where I live). I'm also working to have an homelab and run my own Opensource LLM engine and model offline, it will not as good as Claude Code and co. but at least I will be a little more relieved to not participate in the un-ethical rush for the money. We can discuss on Mastodon, if you want @lukather@mastodon.uno
+
 # 🤖 AI-ssistant Deck
 
 **AI-ssistant Deck** is a plugin for the Steam Deck built with [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader). It allows users to ask questions to a custom AI assistant directly from their console.
 
-## ✨ Features
+## Features
 
 - Integrated React frontend with Decky UI components
 - Python backend with method bridging via Decky Loader
 - Dynamic responses from AI models (Gemini now, others in the future)
 - API key saving
 
-## 🧰 Requirements
+## Requirements
 
 - Steam Deck with Decky Loader installed
 - Python 3.x
 - Node.js + pnpm (for development and building)
 - TypeScript + Rollup build system
 
-## 🚀 Manual Installation
+## Manual Installation
 
 1. Clone or download the project on your PC
 2. Transfer the folder `deck-ai-assistant` to:
@@ -25,11 +27,10 @@
    /home/deck/homebrew/plugins/deck-ai-assistant
    ```
 
-3. Restart Decky Loader:
+3. Restart Decky Loader
 
- 
 
-## 🛠️ Local Build Instructions
+## 🛠Local Build Instructions
 
 To rebuild the frontend interface from source:
 
@@ -38,7 +39,7 @@ pnpm install
 pnpm build
 ```
 
-## 🧠 AI Integration
+## AI Integration
 
 AI-ssistant Deck integrates with Google Gemini (and will support more AI models in the future). To use the plugin, you must provide your own Gemini API key. The plugin securely stores your API key locally and uses it to send your questions to Gemini, returning intelligent responses in the UI.
 
@@ -49,7 +50,7 @@ AI-ssistant Deck integrates with Google Gemini (and will support more AI models 
 - All logging uses `decky.logger` for debugging and error tracking.
 - Error handling is implemented for invalid questions, missing/invalid API keys, and network/API errors.
 
-## 🔑 How to Get a Gemini API Key
+## How to Get a Gemini API Key
 
 1. Go to the [Google AI Studio](https://aistudio.google.com/app/apikey) and sign in with your Google account.
 2. Click on "Create API key" and follow the instructions.
@@ -59,13 +60,13 @@ AI-ssistant Deck integrates with Google Gemini (and will support more AI models 
 
 *Note: Keep your API key private. If you believe it has been compromised, revoke it from the Google AI Studio and generate a new one.*
 
-## 💡 Customization
+## Customization
 
 - Use `plugin.json` to configure metadata, plugin title, description, and backend entry
 - Define backend methods in `main.py` to expose custom functionality to the frontend
 - Icons can be updated using Font Awesome or React Icons
 
-## 👤 Author
+## Author
 
 **Lorenzo** — Milan, Italy  
 GitHub: [lukather](https://github.com/your-username)  
@@ -100,3 +101,4 @@ Newsletter: [lukather](https://news.ilgiocatore.net)
 ## 📄 License
 
 Distributed under the **GNU GPL V2 License**.
+
