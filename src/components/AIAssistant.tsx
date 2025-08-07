@@ -289,6 +289,7 @@ const AIAssistant = () => {
             onClick={handleVoiceInput}
             disabled={loading}
             style={{ 
+              paddingTop: "-12px",
               height: "40px", 
               width: "45px", 
               display: "flex", 
