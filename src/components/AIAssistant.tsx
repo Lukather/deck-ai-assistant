@@ -8,7 +8,45 @@ import {
   GameEntry,
 } from "../utils/gameNameMap";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
+
+// Sanitization schema for AI-generated markdown
+// Allows safe markdown elements while blocking XSS vectors
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames || []),
+    // Allow code blocks
+    "code", "pre", "blockquote",
+    // Allow emphasis
+    "em", "strong", "del", "s", "u",
+    // Allow lists
+    "ul", "ol", "li",
+    // Allow links with restrictions
+    "a",
+    // Allow images with restrictions
+    "img",
+    // Allow tables
+    "table", "thead", "tbody", "tr", "th", "td",
+  ],
+  attributes: {
+    ...(defaultSchema.attributes || {}),
+    "*": [...((defaultSchema.attributes as any)?.["*"] || []), "className"],
+    a: ["href", "title", "target", "rel"],
+    img: ["src", "alt", "title", "width", "height"],
+  },
+  // Strip all event handlers and dangerous protocols
+  strip: [
+    "onerror",
+    "onload",
+    "onclick",
+    "onmouseover",
+    "javascript:",
+    "data:",
+  ],
+};
 
 
 const AIAssistant = () => {
@@ -242,7 +280,12 @@ const AIAssistant = () => {
               whiteSpace: "pre-wrap"
             }}>
                {msg.role === "ai" ? (
-                 <ReactMarkdown>{msg.text}</ReactMarkdown>
+                 <ReactMarkdown
+                   remarkPlugins={[remarkGfm]}
+                   rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
+                 >
+                   {msg.text}
+                 </ReactMarkdown>
                ) : (
                  msg.text
                )}
@@ -267,7 +310,12 @@ const AIAssistant = () => {
               maxWidth: "80%",
               whiteSpace: "pre-wrap"
             }}>
-              <ReactMarkdown>{typingText}</ReactMarkdown>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
+              >
+                {typingText}
+              </ReactMarkdown>
             </div>
           </div>
         )}
