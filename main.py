@@ -50,7 +50,9 @@ class Plugin:
                 decky.logger.warning("Chiave API vuota.")
                 return "Chiave API non impostata."
 
-            decky.logger.info(f"Chiave API usata: {repr(api_key)}")  # Log chiave API
+            # Security: Never log full API key - mask all but last 4 chars
+            masked_key = f"****{api_key[-4:]}" if len(api_key) >= 4 else "****"
+            decky.logger.info(f"Chiave API usata: {masked_key}")
 
             # Build prompt from conversation if available
             if conversation and isinstance(conversation, list) and len(conversation) > 0:
