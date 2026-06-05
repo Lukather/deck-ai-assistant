@@ -19,6 +19,7 @@ VOSK_LIB_PATH = os.path.join(PLUGIN_DIR, "vosk")
 class Plugin:
     def __init__(self):
         self.dictation_process = None
+        self._voice_lock = asyncio.Lock()  # Prevent concurrent voice operations
         decky.logger.info("Plugin initialized with voice recording support")
     
     async def ask_question(self, payload) -> str:
@@ -173,19 +174,20 @@ class Plugin:
         Returns:
             str: Status message.
         """
-        try:
-            decky.logger.info("=== Starting voice recording with nerd-dictation ===")
-            
-            # Initialize instance variables if they don't exist
-            if not hasattr(self, 'dictation_process'):
-                self.dictation_process = None
+        async with self._voice_lock:
+            try:
+                decky.logger.info("=== Starting voice recording with nerd-dictation ===")
                 
-            # Stop any existing recording
-            if self.dictation_process:
-                decky.logger.info("Stopping existing dictation process")
-                await self.stop_voice_recording()
-            
-            # Check if bundled nerd-dictation is available
+                # Check if already recording
+                if self.dictation_process is not None:
+                    if self.dictation_process.poll() is None:
+                        decky.logger.info("Already recording, stopping first")
+                        await self._cleanup_dictation_process()
+                    else:
+                        # Zombie process, clean up reference
+                        self.dictation_process = None
+                
+                # Check if bundled nerd-dictation is available
             if not os.path.exists(NERD_DICTATION_PATH):
                 decky.logger.error(f"Bundled nerd-dictation not found at {NERD_DICTATION_PATH}")
                 return "Error: nerd-dictation not available in plugin"
@@ -221,24 +223,69 @@ class Plugin:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT  # Combine stderr with stdout to capture all output
             )
-            # No temp file needed since we're using STDOUT
             
             decky.logger.info(f"Dictation started with PID {self.dictation_process.pid}")
             
-            # Give it a moment to start and capture any immediate output
+            # Give it a moment to start and check for immediate failures
             await asyncio.sleep(0.5)
+            
+            # Check if process died immediately (error during startup)
             if self.dictation_process.poll() is not None:
-                # Process already ended, capture output
                 stdout, _ = self.dictation_process.communicate()
-                if stdout:
-                    decky.logger.error(f"nerd-dictation failed to start: {stdout.decode()}")
-                    return f"Failed to start voice recording: {stdout.decode()}"
+                error_msg = stdout.decode().strip() if stdout else "Unknown error"
+                decky.logger.error(f"nerd-dictation failed to start: {error_msg}")
+                self.dictation_process = None
+                return f"Failed to start voice recording: {error_msg}"
             
             return "Voice recording started successfully"
             
         except Exception as e:
             decky.logger.error(f"Error starting voice recording: {str(e)}\n{traceback.format_exc()}")
+            self.dictation_process = None
             return f"Error: {str(e)}"
+
+    async def _cleanup_dictation_process(self) -> None:
+        """
+        Internal: Clean up the dictation process safely.
+        Must be called while holding _voice_lock.
+        """
+        if self.dictation_process is None:
+            return
+        
+        proc = self.dictation_process
+        self.dictation_process = None  # Clear reference FIRST
+        
+        # Check if already dead
+        if proc.poll() is not None:
+            # Already dead, just close pipes
+            try:
+                proc.stdout.close()
+            except:
+                pass
+            return
+        
+        # Try graceful termination via nerd-dictation end command
+        try:
+            env = os.environ.copy()
+            env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+            subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
+        except:
+            pass
+        
+        # If still alive, terminate
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        
+        # Close pipes
+        try:
+            proc.stdout.close()
+        except:
+            pass
 
     async def stop_voice_recording(self) -> str:
         """
@@ -246,70 +293,53 @@ class Plugin:
         Returns:
             str: Transcribed text or error message.
         """
-        try:
-            decky.logger.info("Stopping voice recording...")
-            
-            # Initialize instance variables if they don't exist
-            if not hasattr(self, 'dictation_process'):
-                self.dictation_process = None
-            
-            if not self.dictation_process:
-                return "Error: No recording in progress"
-            
-            # Stop the dictation process
-            decky.logger.info("Terminating nerd-dictation process")
+        async with self._voice_lock:
             try:
-                # First try to end dictation gracefully using bundled nerd-dictation
-                env = os.environ.copy()
-                env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
-                subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
-            except:
-                # If that fails, kill the process
-                if self.dictation_process.poll() is None:
-                    self.dictation_process.terminate()
-                    try:
-                        self.dictation_process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        self.dictation_process.kill()
-                        self.dictation_process.wait()
-            
-            # Capture any output from the process
-            if self.dictation_process.stdout:
+                decky.logger.info("Stopping voice recording...")
+                
+                if self.dictation_process is None:
+                    return "Error: No recording in progress"
+                
+                # Get reference and clear immediately to prevent double-reads
+                proc = self.dictation_process
+                self.dictation_process = None
+                
+                decky.logger.info("Terminating nerd-dictation process")
+                
+                # Try graceful termination via nerd-dictation end command
                 try:
-                    output, _ = self.dictation_process.communicate(timeout=1)
-                    if output:
-                        decky.logger.info(f"nerd-dictation output: {output.decode()}")
+                    env = os.environ.copy()
+                    env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+                    subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
                 except:
                     pass
-            
-            decky.logger.info("Dictation process stopped")
-            
-            # Wait a moment for output to be written
-            await asyncio.sleep(0.5)
-            
-            # Read transcription from stdout
-            transcription = ""
-            try:
-                if self.dictation_process and self.dictation_process.stdout:
-                    stdout_data, _ = self.dictation_process.communicate(timeout=2)
-                    if stdout_data:
-                        transcription = stdout_data.decode().strip()
+                
+                # If still alive, terminate/kill
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                
+                # Read transcription (ONLY ONCE - communicate closes pipes)
+                transcription = ""
+                try:
+                    stdout, _ = proc.communicate(timeout=2)
+                    if stdout:
+                        transcription = stdout.decode().strip()
                         decky.logger.info(f"Transcription from stdout: '{transcription}'")
                     else:
                         decky.logger.info("No stdout data received")
-                else:
-                    decky.logger.warning("No dictation process stdout available")
+                except Exception as e:
+                    decky.logger.error(f"Error reading transcription: {e}")
+                
+                decky.logger.info("Dictation process stopped")
+                
+                return transcription if transcription else "No speech detected"
+                
             except Exception as e:
-                decky.logger.error(f"Error reading transcription from stdout: {e}")
-            
-            # Clean up
-            self.dictation_process = None
-            
-            return transcription if transcription else "No speech detected"
-            
-        except Exception as e:
-            decky.logger.error(f"Error stopping voice recording: {str(e)}\n{traceback.format_exc()}")
-            # Clean up on error
-            self.dictation_process = None
-            return f"Error: {str(e)}"
+                decky.logger.error(f"Error stopping voice recording: {str(e)}\n{traceback.format_exc()}")
+                return f"Error: {str(e)}"
 
