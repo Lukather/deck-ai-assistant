@@ -8,7 +8,8 @@ import tempfile
 import subprocess
 from httpx import ReadTimeout
 
-CONFIG_PATH = os.path.expanduser("~/.aiassistant_config.json")
+# Use Decky Loader recommended paths for settings
+CONFIG_PATH = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "config.json")
 
 # Plugin directory paths for bundled dependencies
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,26 +35,26 @@ class Plugin:
                 game = None
                 conversation = None
 
-            # Controllo domanda
+            # Question validation
             if not question or not isinstance(question, str) or not question.strip():
-                decky.logger.warning("Domanda non valida o vuota.")
-                return "Domanda non valida."
+                decky.logger.warning("Invalid or empty question.")
+                return "Invalid question."
 
-            # Recupero chiave API
+            # Retrieve API key from settings directory
             if not os.path.exists(CONFIG_PATH):
-                decky.logger.warning("File config mancante.")
-                return "Chiave API non trovata."
+                decky.logger.warning("Config file not found.")
+                return "API key not found."
 
             with open(CONFIG_PATH, "r") as f:
                 api_key = json.load(f).get("api_key", "")
 
             if not api_key:
-                decky.logger.warning("Chiave API vuota.")
-                return "Chiave API non impostata."
+                decky.logger.warning("API key is empty.")
+                return "API key not set."
 
             # Security: Never log full API key - mask all but last 4 chars
             masked_key = f"****{api_key[-4:]}" if len(api_key) >= 4 else "****"
-            decky.logger.info(f"Chiave API usata: {masked_key}")
+            decky.logger.info(f"API key used: {masked_key}")
 
             # Build prompt from conversation if available
             if conversation and isinstance(conversation, list) and len(conversation) > 0:
@@ -76,7 +77,7 @@ class Plugin:
                 else:
                     prompt = question.strip()
 
-            # Preparazione richiesta Gemini
+            # Prepare Gemini request
             headers = {
                 "Content-Type": "application/json"
             }
@@ -93,7 +94,7 @@ class Plugin:
 
             url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + api_key
 
-            decky.logger.info(f"Richiesta Gemini: {gemini_payload}")
+            decky.logger.info(f"Gemini request: {gemini_payload}")
 
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
@@ -102,32 +103,34 @@ class Plugin:
                 decky.logger.error("Timeout while waiting for Gemini API response.")
                 return "Timeout: The AI service took too long to respond. Please try again."
 
-            decky.logger.info(f"Risposta grezza: {response.text}")
+            decky.logger.info(f"Raw response: {response.text}")
 
             if response.status_code != 200:
-                decky.logger.error(f"Errore HTTP {response.status_code}: {response.text}")
-                return f"Errore nella richiesta: {response.status_code}"
+                decky.logger.error(f"HTTP error {response.status_code}: {response.text}")
+                return f"Request error: {response.status_code}"
 
             data = response.json()
 
             output = data["candidates"][0]["content"]["parts"][0]["text"]
-            decky.logger.info(f"Risposta Gemini: {output}")
+            decky.logger.info(f"Gemini response: {output}")
             return output
 
         except Exception as e:
-            decky.logger.error(f"Errore ask_question: {str(e)}\n{traceback.format_exc()}")
-            return f"Errore nella richiesta: {str(e)}"
+            decky.logger.error(f"Error in ask_question: {str(e)}\n{traceback.format_exc()}")
+            return f"Request error: {str(e)}"
 
     async def save_api_key(self, key: str) -> str:
         try:
+            # Ensure the settings directory exists
+            os.makedirs(decky.DECKY_PLUGIN_SETTINGS_DIR, exist_ok=True)
             with open(CONFIG_PATH, "w") as f:
                 json.dump({ "api_key": key.strip() }, f)
-            os.chmod(CONFIG_PATH, 0o600)  # Sicurezza
-            decky.logger.info("Chiave API salvata.")
-            return "Chiave salvata correttamente."
+            os.chmod(CONFIG_PATH, 0o600)  # Security: restrict file permissions
+            decky.logger.info("API key saved.")
+            return "Key saved successfully."
         except Exception as e:
-            decky.logger.error(f"Errore salvataggio chiave: {str(e)}")
-            return "Errore nel salvataggio."
+            decky.logger.error(f"Error saving key: {str(e)}")
+            return "Error saving key."
 
     async def get_api_key(self) -> str:
         try:
@@ -137,7 +140,7 @@ class Plugin:
                 data = json.load(f)
             return data.get("api_key", "")
         except Exception as e:
-            decky.logger.error(f"Errore lettura chiave: {str(e)}")
+            decky.logger.error(f"Error reading key: {str(e)}")
             return ""
 
     async def log_message(self, message: str) -> str:

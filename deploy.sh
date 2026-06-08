@@ -42,27 +42,22 @@ for dep in "${VOICE_DEPS[@]}"; do
 done
 echo ""
 
-# Step 3: Create remote directory
-echo -e "${GREEN}📂 Creating remote directory...${NC}"
+# Step 3: Create remote directory (only if needed)
+echo -e "${GREEN}📂 Ensuring remote directory exists...${NC}"
+ssh "$REMOTE_HOST" "mkdir -p $PLUGIN_DIR && sudo chown deck:deck $PLUGIN_DIR" 2>/dev/null || \
 ssh "$REMOTE_HOST" "mkdir -p $PLUGIN_DIR"
 echo ""
 
 # Step 4: Sync files
 echo -e "${GREEN}📤 Syncing plugin files...${NC}"
-rsync -avz --progress \
-    dist/ \
-    main.py \
-    plugin.json \
-    "$REMOTE_HOST:$PLUGIN_DIR/"
+scp -r dist/* main.py plugin.json "$REMOTE_HOST:$PLUGIN_DIR/"
 echo ""
 
 # Step 5: Sync voice dependencies if they exist
 for dep in "${VOICE_DEPS[@]}"; do
     if [ -d "$dep" ]; then
         echo -e "${GREEN}📤 Syncing $dep...${NC}"
-        rsync -avz --progress --delete \
-            "$dep/" \
-            "$REMOTE_HOST:$PLUGIN_DIR/$dep/"
+        scp -r "$dep" "$REMOTE_HOST:$PLUGIN_DIR/"
     fi
 done
 echo ""
