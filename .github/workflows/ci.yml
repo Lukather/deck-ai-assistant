@@ -95,8 +95,8 @@ jobs:
           body: |
             ## Installation
             
-            1. Extract the zip file
-            2. Copy contents to `/home/deck/homebrew/plugins/deck-ai-assistant/`
+            1. Download and extract the zip file
+            2. Place the extracted folder at `/home/deck/homebrew/plugins/deck-ai-assistant/`
             3. Restart Decky Loader
             4. Enter your Gemini API key in the plugin settings
             
@@ -106,5 +106,6 @@ jobs:
             - Voice dependencies (nerd-dictation, vosk-model) included
           files: artifact/deck-ai-assistant.zip
           generate_release_notes: true
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
