@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: '9'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Verify build output
+        run: |
+          if [ ! -f dist/index.js ]; then
+            echo "Error: dist/index.js not found after build"
+            exit 1
+          fi
+          echo "Build output verified"
+
+      - name: Package plugin
+        run: |
+          mkdir -p release
+          
+          # Copy frontend build
+          cp -r dist release/
+          
+          # Copy backend files
+          cp main.py release/
+          cp plugin.json release/
+          cp -r nerd-dictation release/ 2>/dev/null || true
+          cp -r vosk release/ 2>/dev/null || true
+          cp -r vosk-model release/ 2>/dev/null || true
+          
+          # Create zip package
+          cd release
+          zip -r ../deck-ai-assistant.zip .
+          cd ..
+          
+          echo "Plugin packaged successfully"
+          ls -la release/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deck-ai-assistant
+          path: deck-ai-assistant.zip
+          retention-days: 30
+
+  release:
+    name: Create Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deck-ai-assistant
+          path: artifact
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## Installation
+            
+            1. Extract the zip file
+            2. Copy contents to `/home/deck/homebrew/plugins/deck-ai-assistant/`
+            3. Restart Decky Loader
+            4. Enter your Gemini API key in the plugin settings
+            
+            ## Requirements
+            
+            - [Gemini API key](https://aistudio.google.com/app/apikey)
+            - Voice dependencies (nerd-dictation, vosk-model) included
+          files: artifact/deck-ai-assistant.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
