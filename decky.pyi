@@ -42,7 +42,7 @@ DECKY_VERSION: str
 """
 The version of the decky loader.
 Environment variable: `DECKY_VERSION`.
-e.g.: `v2.5.0-pre1`
+e.g.: `v3.2.0`
 """
 
 DECKY_USER: str
@@ -174,11 +174,13 @@ Logging
 logger: logging.Logger
 """The main plugin logger writing to `DECKY_PLUGIN_LOG`."""
 
+
 """
 Event handling
 """
-# TODO better docstring im lazy
+
 async def emit(event: str, *args: Any) -> None:
     """
-    Send an event to the frontend.
+    Triggers all event listeners in the frontend waiting for `event`, passing the remaining `*args` as the arguments to each listener function.
+    (Event listeners are set up in the frontend via the `addEventListener` function from `@decky/api`)
     """
