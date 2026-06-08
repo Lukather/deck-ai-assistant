@@ -8,6 +8,45 @@ import {
   GameEntry,
 } from "../utils/gameNameMap";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
+
+// Sanitization schema for AI-generated markdown
+// Allows safe markdown elements while blocking XSS vectors
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames || []),
+    // Allow code blocks
+    "code", "pre", "blockquote",
+    // Allow emphasis
+    "em", "strong", "del", "s", "u",
+    // Allow lists
+    "ul", "ol", "li",
+    // Allow links with restrictions
+    "a",
+    // Allow images with restrictions
+    "img",
+    // Allow tables
+    "table", "thead", "tbody", "tr", "th", "td",
+  ],
+  attributes: {
+    ...(defaultSchema.attributes || {}),
+    "*": [...((defaultSchema.attributes as any)?.["*"] || []), "className"],
+    a: ["href", "title", "target", "rel"],
+    img: ["src", "alt", "title", "width", "height"],
+  },
+  // Strip all event handlers and dangerous protocols
+  strip: [
+    "onerror",
+    "onload",
+    "onclick",
+    "onmouseover",
+    "javascript:",
+    "data:",
+  ],
+};
 
 
 const AIAssistant = () => {
@@ -17,6 +56,8 @@ const AIAssistant = () => {
   const [typingText, setTypingText] = useState<string | null>(null);
   const [activeGame, setActiveGame] = useState<{ appid: number; name: string } | null>(null);
   const [games, setGames] = useState<GameEntry[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
 
   // Fetch games on mount
   useEffect(() => {
@@ -33,6 +74,9 @@ const AIAssistant = () => {
   useEffect(() => {
     let unregister: any = null;
     let cancelled = false;
+
+    // Only proceed if games array has been loaded
+    if (games.length === 0) return;
 
     // On mount, use Router.MainRunningApp if available
     if (Router.MainRunningApp) {
@@ -60,6 +104,14 @@ const AIAssistant = () => {
     };
   }, [games]);
 
+  // Update active game name when games list is loaded (in case game was detected before games were fetched)
+  useEffect(() => {
+    if (games.length > 0 && activeGame && activeGame.name.startsWith('AppID:')) {
+      const name = getGameNameByAppId(activeGame.appid, games);
+      setActiveGame({ appid: activeGame.appid, name });
+    }
+  }, [games, activeGame]);
+
   // Load conversation from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem("chatHistory");
@@ -72,6 +124,17 @@ const AIAssistant = () => {
   useEffect(() => {
     localStorage.setItem("chatHistory", JSON.stringify(conversation));
   }, [conversation]);
+
+  // Initialize backend voice recording  
+  useEffect(() => {
+    const initVoice = async () => {
+      await call("log_message", "Initializing backend voice recording...");
+      setSpeechSupported(true); // Always supported via backend
+      await call("log_message", "Backend voice recording initialized successfully");
+    };
+
+    initVoice();
+  }, []);
 
   const handleAsk = async () => {
     if (!input.trim()) return;
@@ -108,6 +171,49 @@ const AIAssistant = () => {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVoiceInput = async () => {
+    await call("log_message", `Voice button clicked - isRecording: ${isRecording}`);
+    
+    try {
+      if (isRecording) {
+        await call("log_message", "Stopping backend voice recording...");
+        setIsRecording(false);
+        
+        // Call backend to stop recording and get transcription
+        const transcription = await call("stop_voice_recording") as string;
+        await call("log_message", `Backend transcription result: "${transcription}"`);
+        
+        if (transcription && typeof transcription === 'string' && !transcription.startsWith("Error")) {
+          setInput(prev => prev + transcription + ' ');
+          await call("log_message", "Added transcription to input field");
+        }
+      } else {
+        await call("log_message", "Starting backend voice recording...");
+        setIsRecording(true);
+        
+        // First test if we can call voice methods at all
+        try {
+          const testResult = await call("test_voice_method") as string;
+          await call("log_message", `Test method result: "${testResult}"`);
+        } catch (testError) {
+          await call("log_message", `Test method error: ${testError}`);
+        }
+        
+        // Call backend to start recording
+        const result = await call("start_voice_recording") as string;
+        await call("log_message", `Backend start result: "${result}"`);
+        
+        if (result && typeof result === 'string' && result.startsWith("Error")) {
+          setIsRecording(false);
+          await call("log_message", "Failed to start backend recording");
+        }
+      }
+    } catch (error) {
+      await call("log_message", `Error in handleVoiceInput: ${error}`);
+      setIsRecording(false);
     }
   };
 
@@ -174,7 +280,12 @@ const AIAssistant = () => {
               whiteSpace: "pre-wrap"
             }}>
                {msg.role === "ai" ? (
-                 <ReactMarkdown>{msg.text}</ReactMarkdown>
+                 <ReactMarkdown
+                   remarkPlugins={[remarkGfm]}
+                   rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
+                 >
+                   {msg.text}
+                 </ReactMarkdown>
                ) : (
                  msg.text
                )}
@@ -199,21 +310,60 @@ const AIAssistant = () => {
               maxWidth: "80%",
               whiteSpace: "pre-wrap"
             }}>
-              <ReactMarkdown>{typingText}</ReactMarkdown>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
+              >
+                {typingText}
+              </ReactMarkdown>
             </div>
           </div>
         )}
       </div>
 
-      {/* Input domanda */}
-      <TextField
-        label="Question"
-        value={input}
-        onChange={(e) => setInput(e.currentTarget.value)}
-        disabled={loading}
-      />
+      {/* Input section with voice button */}
+      <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <TextField
+            label="Question"
+            value={input}
+            onChange={(e) => setInput(e.currentTarget.value)}
+            disabled={loading}
+          />
+        </div>
+        
+        {speechSupported && (
+          <Button
+            onClick={handleVoiceInput}
+            disabled={loading}
+            style={{ 
+              paddingTop: "-12px",
+              height: "40px", 
+              width: "45px", 
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center",
+              backgroundColor: isRecording ? "#dc2626" : undefined
+            }}
+          >
+            {isRecording ? <FaMicrophoneSlash /> : <FaMicrophone />}
+          </Button>
+        )}
+      </div>
 
-      {/* Pulsante invio */}
+      {/* Status indicator for recording */}
+      {isRecording && (
+        <div style={{ 
+          color: "#dc2626", 
+          fontSize: "0.9em", 
+          textAlign: "center",
+          fontWeight: "bold"
+        }}>
+          🔴 Recording... Speak now
+        </div>
+      )}
+
+      {/* Send button */}
       <Button
         onClick={handleAsk}
         disabled={loading || !input.trim()}

@@ -23,6 +23,10 @@ coverage
 node_modules
 bower_components
 .pnpm-store
+.claude
+.stdfolder
+.stfolder
+.stfolder/
 
 # Editors
 .idea
@@ -43,8 +47,9 @@ yalc.lock
 .vscode/settings.json
 
 # Ignore output folder
-
 backend/out
+
+defaults/
 
 # Make sure to ignore any instance of the loader's decky_plugin.py
 decky_plugin.py

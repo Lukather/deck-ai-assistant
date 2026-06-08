@@ -4,11 +4,23 @@ import json
 import asyncio
 import httpx
 import traceback
+import tempfile
+import subprocess
 from httpx import ReadTimeout
 
 CONFIG_PATH = os.path.expanduser("~/.aiassistant_config.json")
 
+# Plugin directory paths for bundled dependencies
+PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+NERD_DICTATION_PATH = os.path.join(PLUGIN_DIR, "nerd-dictation", "nerd-dictation")
+VOSK_MODEL_PATH = os.path.join(PLUGIN_DIR, "vosk-model")
+VOSK_LIB_PATH = os.path.join(PLUGIN_DIR, "vosk")
+
 class Plugin:
+    def __init__(self):
+        self.dictation_process = None
+        self._voice_lock = asyncio.Lock()  # Prevent concurrent voice operations
+        decky.logger.info("Plugin initialized with voice recording support")
     
     async def ask_question(self, payload) -> str:
         try:
@@ -22,7 +34,7 @@ class Plugin:
                 game = None
                 conversation = None
 
-            # 🔍 Controllo domanda
+            # Controllo domanda
             if not question or not isinstance(question, str) or not question.strip():
                 decky.logger.warning("Domanda non valida o vuota.")
                 return "Domanda non valida."
@@ -39,7 +51,9 @@ class Plugin:
                 decky.logger.warning("Chiave API vuota.")
                 return "Chiave API non impostata."
 
-            decky.logger.info(f"Chiave API usata: {repr(api_key)}") # 🔍 Log chiave API
+            # Security: Never log full API key - mask all but last 4 chars
+            masked_key = f"****{api_key[-4:]}" if len(api_key) >= 4 else "****"
+            decky.logger.info(f"Chiave API usata: {masked_key}")
 
             # Build prompt from conversation if available
             if conversation and isinstance(conversation, list) and len(conversation) > 0:
@@ -108,7 +122,7 @@ class Plugin:
         try:
             with open(CONFIG_PATH, "w") as f:
                 json.dump({ "api_key": key.strip() }, f)
-            os.chmod(CONFIG_PATH, 0o600)  # 🔐 Sicurezza
+            os.chmod(CONFIG_PATH, 0o600)  # Sicurezza
             decky.logger.info("Chiave API salvata.")
             return "Chiave salvata correttamente."
         except Exception as e:
@@ -140,3 +154,192 @@ class Plugin:
         except Exception as e:
             decky.logger.error(f"Failed to log message: {str(e)}")
             return f"Failed to log message: {str(e)}"
+
+    async def test_voice_method(self) -> str:
+        """
+        Simple test method to verify backend communication for voice features.
+        Returns:
+            str: Test confirmation message.
+        """
+        try:
+            decky.logger.info("=== TEST VOICE METHOD CALLED ===")
+            return "Voice method test successful"
+        except Exception as e:
+            decky.logger.error(f"Test voice method failed: {str(e)}\n{traceback.format_exc()}")
+            return f"Test failed: {str(e)}"
+
+    async def start_voice_recording(self) -> str:
+        """
+        Start voice recording using nerd-dictation (similar to decky-dictation plugin).
+        Returns:
+            str: Status message.
+        """
+        async with self._voice_lock:
+            try:
+                decky.logger.info("=== Starting voice recording with nerd-dictation ===")
+                
+                # Check if already recording
+                if self.dictation_process is not None:
+                    if self.dictation_process.poll() is None:
+                        decky.logger.info("Already recording, stopping first")
+                        await self._cleanup_dictation_process()
+                    else:
+                        # Zombie process, clean up reference
+                        self.dictation_process = None
+                
+                # Check if bundled nerd-dictation is available
+            if not os.path.exists(NERD_DICTATION_PATH):
+                decky.logger.error(f"Bundled nerd-dictation not found at {NERD_DICTATION_PATH}")
+                return "Error: nerd-dictation not available in plugin"
+            
+            if not os.path.exists(VOSK_MODEL_PATH):
+                decky.logger.error(f"Vosk model not found at {VOSK_MODEL_PATH}")
+                return "Error: Vosk model not available in plugin"
+            
+            # Set up environment variables for audio and Python path (like decky-dictation)
+            env = os.environ.copy()
+            env['PULSE_DEVICE'] = 'default'
+            env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+            # Critical Steam Deck environment variables from decky-dictation
+            env['XDG_RUNTIME_DIR'] = '/run/user/1000'
+            env['XDG_SESSION_TYPE'] = 'wayland'
+            env['DISPLAY'] = ':1'
+            
+            # Start nerd-dictation process with bundled paths (use default PAREC like decky-dictation)
+            cmd = [
+                'python3', NERD_DICTATION_PATH, 'begin',
+                '--vosk-model-dir', VOSK_MODEL_PATH,
+                '--timeout', '10',  # 10 second timeout
+                '--output', 'STDOUT',
+                # No --input specified, uses default PAREC like decky-dictation
+                '--full-sentence'
+            ]
+            
+            decky.logger.info(f"Starting nerd-dictation: {cmd}")
+            
+            self.dictation_process = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT  # Combine stderr with stdout to capture all output
+            )
+            
+            decky.logger.info(f"Dictation started with PID {self.dictation_process.pid}")
+            
+            # Give it a moment to start and check for immediate failures
+            await asyncio.sleep(0.5)
+            
+            # Check if process died immediately (error during startup)
+            if self.dictation_process.poll() is not None:
+                stdout, _ = self.dictation_process.communicate()
+                error_msg = stdout.decode().strip() if stdout else "Unknown error"
+                decky.logger.error(f"nerd-dictation failed to start: {error_msg}")
+                self.dictation_process = None
+                return f"Failed to start voice recording: {error_msg}"
+            
+            return "Voice recording started successfully"
+            
+        except Exception as e:
+            decky.logger.error(f"Error starting voice recording: {str(e)}\n{traceback.format_exc()}")
+            self.dictation_process = None
+            return f"Error: {str(e)}"
+
+    async def _cleanup_dictation_process(self) -> None:
+        """
+        Internal: Clean up the dictation process safely.
+        Must be called while holding _voice_lock.
+        """
+        if self.dictation_process is None:
+            return
+        
+        proc = self.dictation_process
+        self.dictation_process = None  # Clear reference FIRST
+        
+        # Check if already dead
+        if proc.poll() is not None:
+            # Already dead, just close pipes
+            try:
+                proc.stdout.close()
+            except:
+                pass
+            return
+        
+        # Try graceful termination via nerd-dictation end command
+        try:
+            env = os.environ.copy()
+            env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+            subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
+        except:
+            pass
+        
+        # If still alive, terminate
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        
+        # Close pipes
+        try:
+            proc.stdout.close()
+        except:
+            pass
+
+    async def stop_voice_recording(self) -> str:
+        """
+        Stop voice recording and return transcribed text using nerd-dictation.
+        Returns:
+            str: Transcribed text or error message.
+        """
+        async with self._voice_lock:
+            try:
+                decky.logger.info("Stopping voice recording...")
+                
+                if self.dictation_process is None:
+                    return "Error: No recording in progress"
+                
+                # Get reference and clear immediately to prevent double-reads
+                proc = self.dictation_process
+                self.dictation_process = None
+                
+                decky.logger.info("Terminating nerd-dictation process")
+                
+                # Try graceful termination via nerd-dictation end command
+                try:
+                    env = os.environ.copy()
+                    env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+                    subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
+                except:
+                    pass
+                
+                # If still alive, terminate/kill
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                
+                # Read transcription (ONLY ONCE - communicate closes pipes)
+                transcription = ""
+                try:
+                    stdout, _ = proc.communicate(timeout=2)
+                    if stdout:
+                        transcription = stdout.decode().strip()
+                        decky.logger.info(f"Transcription from stdout: '{transcription}'")
+                    else:
+                        decky.logger.info("No stdout data received")
+                except Exception as e:
+                    decky.logger.error(f"Error reading transcription: {e}")
+                
+                decky.logger.info("Dictation process stopped")
+                
+                return transcription if transcription else "No speech detected"
+                
+            except Exception as e:
+                decky.logger.error(f"Error stopping voice recording: {str(e)}\n{traceback.format_exc()}")
+                return f"Error: {str(e)}"
+
