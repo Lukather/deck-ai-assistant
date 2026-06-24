@@ -138,15 +138,9 @@ const AIAssistant = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(conversation));
   }, [conversation]);
 
-  // Initialize backend voice recording  
+  // Initialize backend voice recording
   useEffect(() => {
-    const initVoice = async () => {
-      await call("log_message", "Initializing backend voice recording...");
-      setSpeechSupported(true); // Always supported via backend
-      await call("log_message", "Backend voice recording initialized successfully");
-    };
-
-    initVoice();
+    setSpeechSupported(true);
   }, []);
 
   const handleAsk = async () => {
@@ -188,37 +182,25 @@ const AIAssistant = () => {
   };
 
   const handleVoiceInput = async () => {
-    await call("log_message", `Voice button clicked - isRecording: ${isRecording}`);
-    
+    let started = false;
     try {
       if (isRecording) {
-        await call("log_message", "Stopping backend voice recording...");
-        setIsRecording(false);
-        
-        // Call backend to stop recording and get transcription
         const transcription = await call("stop_voice_recording") as string;
-        await call("log_message", `Backend transcription result: "${transcription}"`);
-        
-        if (transcription && typeof transcription === 'string' && !transcription.startsWith("Error")) {
-          setInput(prev => prev + transcription + ' ');
-          await call("log_message", "Added transcription to input field");
+        if (transcription && typeof transcription === "string" && !transcription.startsWith("Error")) {
+          setInput((prev) => prev + transcription + " ");
         }
       } else {
-        await call("log_message", "Starting backend voice recording...");
-        setIsRecording(true);
-
-        // Call backend to start recording
         const result = await call("start_voice_recording") as string;
-        await call("log_message", `Backend start result: "${result}"`);
-        
-        if (result && typeof result === 'string' && result.startsWith("Error")) {
-          setIsRecording(false);
-          await call("log_message", "Failed to start backend recording");
+        if (result && typeof result === "string" && result.startsWith("Error")) {
+          throw new Error(result);
         }
+        started = true;
+        setIsRecording(true);
       }
     } catch (error) {
-      await call("log_message", `Error in handleVoiceInput: ${error}`);
-      setIsRecording(false);
+      await call("log_message", `Voice handler error: ${error}`);
+    } finally {
+      if (!started) setIsRecording(false);
     }
   };
 

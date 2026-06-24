@@ -195,13 +195,13 @@ class Plugin:
                 env['XDG_SESSION_TYPE'] = 'wayland'
                 env['DISPLAY'] = ':1'
 
-                # Start nerd-dictation process with bundled paths (use default PAREC like decky-dictation)
+                # Start nerd-dictation with explicit PulseAudio monitor source
                 cmd = [
                     'python3', NERD_DICTATION_PATH, 'begin',
                     '--vosk-model-dir', VOSK_MODEL_PATH,
                     '--timeout', '10',  # 10 second timeout
                     '--output', 'STDOUT',
-                    # No --input specified, uses default PAREC like decky-dictation
+                    '--input', 'PAREC',
                     '--full-sentence'
                 ]
 
