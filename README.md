@@ -69,8 +69,12 @@ Then enter your [Gemini API key](https://aistudio.google.com/app/apikey) in the 
 ## Development
 
 ```bash
-pnpm install
-pnpm build
+pnpm install          # Install dependencies
+pnpm build            # Build the frontend bundle
+pnpm lint             # Lint src/ with Biome
+pnpm lint:fix         # Auto-fix lint issues
+pnpm format           # Format src/ with Biome
+pnpm typecheck        # Run tsc --noEmit
 ```
 
 ## Getting Started

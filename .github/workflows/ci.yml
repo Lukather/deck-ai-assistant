@@ -46,22 +46,22 @@ jobs:
       - name: Package plugin
         run: |
           mkdir -p release
-          
+
           # Copy frontend build
           cp -r dist release/
-          
+
           # Copy backend files
           cp main.py release/
           cp plugin.json release/
           cp -r nerd-dictation release/ 2>/dev/null || true
           cp -r vosk release/ 2>/dev/null || true
           cp -r vosk-model release/ 2>/dev/null || true
-          
+
           # Create zip package
           cd release
           zip -r ../deck-ai-assistant.zip .
           cd ..
-          
+
           echo "Plugin packaged successfully"
           ls -la release/
 
@@ -72,9 +72,36 @@ jobs:
           path: deck-ai-assistant.zip
           retention-days: 30
 
+  lint:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: '9'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run lint
+        run: pnpm run lint
+
+      - name: Run typecheck
+        run: pnpm run typecheck
+
   release:
     name: Create Release
-    needs: [build]
+    needs: [build, lint]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     permissions:
