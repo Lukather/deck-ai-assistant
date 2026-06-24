@@ -6,10 +6,14 @@
   "scripts": {
     "build": "rollup -c",
     "watch": "rollup -c -w",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src",
+    "format": "biome format --write src",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run typecheck && pnpm run lint"
   },
   "repository": {
-    "type":     "git",
+    "type": "git",
     "url": "https://github.com/lukather/deck-ai-assistant"
   },
   "keywords": [
@@ -26,10 +30,12 @@
   },
   "homepage": "https://github.com/lukather/deck-ai-assistant#readme",
   "devDependencies": {
+    "@biomejs/biome": "^2.5.1",
     "@decky/rollup": "^1.0.1",
     "@decky/ui": "^4.7.2",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
+    "@types/react-router": "^5.1.20",
     "@types/webpack": "^5.28.5",
     "rollup": "^4.22.5",
     "typescript": "^5.6.2"
