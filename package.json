@@ -9,8 +9,8 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
-    "type": "git",
-    "url": "https://github.com/tuo-username/deck-ai-assistant"
+    "type":     "git",
+    "url": "https://github.com/lukather/deck-ai-assistant"
   },
   "keywords": [
     "decky",

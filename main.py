@@ -158,19 +158,6 @@ class Plugin:
             decky.logger.error(f"Failed to log message: {str(e)}")
             return f"Failed to log message: {str(e)}"
 
-    async def test_voice_method(self) -> str:
-        """
-        Simple test method to verify backend communication for voice features.
-        Returns:
-            str: Test confirmation message.
-        """
-        try:
-            decky.logger.info("=== TEST VOICE METHOD CALLED ===")
-            return "Voice method test successful"
-        except Exception as e:
-            decky.logger.error(f"Test voice method failed: {str(e)}\n{traceback.format_exc()}")
-            return f"Test failed: {str(e)}"
-
     async def start_voice_recording(self) -> str:
         """
         Start voice recording using nerd-dictation (similar to decky-dictation plugin).
@@ -191,61 +178,61 @@ class Plugin:
                         self.dictation_process = None
                 
                 # Check if bundled nerd-dictation is available
-            if not os.path.exists(NERD_DICTATION_PATH):
-                decky.logger.error(f"Bundled nerd-dictation not found at {NERD_DICTATION_PATH}")
-                return "Error: nerd-dictation not available in plugin"
-            
-            if not os.path.exists(VOSK_MODEL_PATH):
-                decky.logger.error(f"Vosk model not found at {VOSK_MODEL_PATH}")
-                return "Error: Vosk model not available in plugin"
-            
-            # Set up environment variables for audio and Python path (like decky-dictation)
-            env = os.environ.copy()
-            env['PULSE_DEVICE'] = 'default'
-            env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
-            # Critical Steam Deck environment variables from decky-dictation
-            env['XDG_RUNTIME_DIR'] = '/run/user/1000'
-            env['XDG_SESSION_TYPE'] = 'wayland'
-            env['DISPLAY'] = ':1'
-            
-            # Start nerd-dictation process with bundled paths (use default PAREC like decky-dictation)
-            cmd = [
-                'python3', NERD_DICTATION_PATH, 'begin',
-                '--vosk-model-dir', VOSK_MODEL_PATH,
-                '--timeout', '10',  # 10 second timeout
-                '--output', 'STDOUT',
-                # No --input specified, uses default PAREC like decky-dictation
-                '--full-sentence'
-            ]
-            
-            decky.logger.info(f"Starting nerd-dictation: {cmd}")
-            
-            self.dictation_process = subprocess.Popen(
-                cmd,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT  # Combine stderr with stdout to capture all output
-            )
-            
-            decky.logger.info(f"Dictation started with PID {self.dictation_process.pid}")
-            
-            # Give it a moment to start and check for immediate failures
-            await asyncio.sleep(0.5)
-            
-            # Check if process died immediately (error during startup)
-            if self.dictation_process.poll() is not None:
-                stdout, _ = self.dictation_process.communicate()
-                error_msg = stdout.decode().strip() if stdout else "Unknown error"
-                decky.logger.error(f"nerd-dictation failed to start: {error_msg}")
+                if not os.path.exists(NERD_DICTATION_PATH):
+                    decky.logger.error(f"Bundled nerd-dictation not found at {NERD_DICTATION_PATH}")
+                    return "Error: nerd-dictation not available in plugin"
+
+                if not os.path.exists(VOSK_MODEL_PATH):
+                    decky.logger.error(f"Vosk model not found at {VOSK_MODEL_PATH}")
+                    return "Error: Vosk model not available in plugin"
+
+                # Set up environment variables for audio and Python path (like decky-dictation)
+                env = os.environ.copy()
+                env['PULSE_DEVICE'] = 'default'
+                env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+                # Critical Steam Deck environment variables from decky-dictation
+                env['XDG_RUNTIME_DIR'] = '/run/user/1000'
+                env['XDG_SESSION_TYPE'] = 'wayland'
+                env['DISPLAY'] = ':1'
+
+                # Start nerd-dictation process with bundled paths (use default PAREC like decky-dictation)
+                cmd = [
+                    'python3', NERD_DICTATION_PATH, 'begin',
+                    '--vosk-model-dir', VOSK_MODEL_PATH,
+                    '--timeout', '10',  # 10 second timeout
+                    '--output', 'STDOUT',
+                    # No --input specified, uses default PAREC like decky-dictation
+                    '--full-sentence'
+                ]
+
+                decky.logger.info(f"Starting nerd-dictation: {cmd}")
+
+                self.dictation_process = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT  # Combine stderr with stdout to capture all output
+                )
+
+                decky.logger.info(f"Dictation started with PID {self.dictation_process.pid}")
+
+                # Give it a moment to start and check for immediate failures
+                await asyncio.sleep(0.5)
+
+                # Check if process died immediately (error during startup)
+                if self.dictation_process.poll() is not None:
+                    stdout, _ = self.dictation_process.communicate()
+                    error_msg = stdout.decode().strip() if stdout else "Unknown error"
+                    decky.logger.error(f"nerd-dictation failed to start: {error_msg}")
+                    self.dictation_process = None
+                    return f"Failed to start voice recording: {error_msg}"
+
+                return "Voice recording started successfully"
+
+            except Exception as e:
+                decky.logger.error(f"Error starting voice recording: {str(e)}\n{traceback.format_exc()}")
                 self.dictation_process = None
-                return f"Failed to start voice recording: {error_msg}"
-            
-            return "Voice recording started successfully"
-            
-        except Exception as e:
-            decky.logger.error(f"Error starting voice recording: {str(e)}\n{traceback.format_exc()}")
-            self.dictation_process = None
-            return f"Error: {str(e)}"
+                return f"Error: {str(e)}"
 
     async def _cleanup_dictation_process(self) -> None:
         """

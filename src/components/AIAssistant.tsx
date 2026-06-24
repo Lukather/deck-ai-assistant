@@ -12,6 +12,9 @@ import remarkGfm from "remark-gfm";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
 
+const STORAGE_KEY = "deck-ai-assistant:chatHistory";
+const LEGACY_STORAGE_KEY = "chatHistory";
+
 // Sanitization schema for AI-generated markdown
 // Allows safe markdown elements while blocking XSS vectors
 const sanitizeSchema = {
@@ -112,17 +115,27 @@ const AIAssistant = () => {
     }
   }, [games, activeGame]);
 
-  // Load conversation from localStorage on mount
+  // Load conversation from localStorage on mount (with one-time migration from the legacy key)
   useEffect(() => {
-    const saved = localStorage.getItem("chatHistory");
-    if (saved) {
-      setConversation(JSON.parse(saved));
+    const newSaved = localStorage.getItem(STORAGE_KEY);
+    if (newSaved) {
+      setConversation(JSON.parse(newSaved));
+      if (localStorage.getItem(LEGACY_STORAGE_KEY) !== null) {
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+      }
+      return;
+    }
+    const legacySaved = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacySaved) {
+      setConversation(JSON.parse(legacySaved));
+      localStorage.setItem(STORAGE_KEY, legacySaved);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
     }
   }, []);
 
   // Save conversation to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem("chatHistory", JSON.stringify(conversation));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversation));
   }, [conversation]);
 
   // Initialize backend voice recording  
@@ -193,15 +206,7 @@ const AIAssistant = () => {
       } else {
         await call("log_message", "Starting backend voice recording...");
         setIsRecording(true);
-        
-        // First test if we can call voice methods at all
-        try {
-          const testResult = await call("test_voice_method") as string;
-          await call("log_message", `Test method result: "${testResult}"`);
-        } catch (testError) {
-          await call("log_message", `Test method error: ${testError}`);
-        }
-        
+
         // Call backend to start recording
         const result = await call("start_voice_recording") as string;
         await call("log_message", `Backend start result: "${result}"`);
@@ -246,7 +251,7 @@ const AIAssistant = () => {
       <Button
         onClick={() => {
           setConversation([]);
-          localStorage.removeItem("chatHistory");
+          localStorage.removeItem(STORAGE_KEY);
         }}
         style={{ alignSelf: "flex-end", marginBottom: 8 }}
         disabled={loading || conversation.length === 0}
