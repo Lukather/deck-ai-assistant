@@ -32,7 +32,7 @@ echo ""
 
 # Step 2: Check voice dependencies
 echo -e "${GREEN}📁 Checking voice dependencies...${NC}"
-VOICE_DEPS=("nerd-dictation" "vosk" "vosk-model")
+VOICE_DEPS=("py_modules/nerd-dictation" "py_modules/vosk" "py_modules/vosk-model")
 for dep in "${VOICE_DEPS[@]}"; do
     if [ -d "$dep" ]; then
         echo -e "  ✅ $dep exists"

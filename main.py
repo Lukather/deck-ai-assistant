@@ -1,8 +1,11 @@
 import decky
 import os
+import sys
 import json
 import asyncio
 import time
+import glob
+import re
 import httpx
 import traceback
 import tempfile
@@ -17,11 +20,54 @@ CONFIG_PATH = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "config.json")
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-# Plugin directory paths for bundled dependencies
+# Plugin directory paths for bundled dependencies. The Decky loader adds
+# `py_modules/` to sys.path automatically, so importable Python packages
+# should live there.
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
-NERD_DICTATION_PATH = os.path.join(PLUGIN_DIR, "nerd-dictation", "nerd-dictation")
-VOSK_MODEL_PATH = os.path.join(PLUGIN_DIR, "vosk-model")
-VOSK_LIB_PATH = os.path.join(PLUGIN_DIR, "vosk")
+PY_MODULES_DIR = os.path.join(PLUGIN_DIR, "py_modules")
+NERD_DICTATION_PATH = os.path.join(PY_MODULES_DIR, "nerd-dictation", "nerd-dictation")
+VOSK_MODEL_PATH = os.path.join(PY_MODULES_DIR, "vosk-model")
+# Path to the directory containing the bundled vosk Python package and its
+# dependency tree. Used as PYTHONPATH for the nerd-dictation subprocess
+# (which imports vosk via its own sys.path, not through Decky).
+VOSK_PYTHON_PATH = os.path.join(PY_MODULES_DIR, "vosk")
+
+
+def _check_voice_deps_python_version() -> None:
+    """Compare the bundled cffi .so against the running Python interpreter.
+
+    The bundled vosk ships a cffi .so compiled for one specific CPython ABI
+    (e.g. cpython-313-x86_64-linux-gnu.so for Python 3.13). If the user's
+    SteamOS Python is a different version, the .so cannot be loaded and
+    voice recording will fail at import time with a confusing error. Surface
+    this clearly at plugin start so the failure mode is obvious.
+
+    Does nothing if the bundled cffi .so is not present (e.g. the user is
+    relying on a system-installed vosk) or if the version can't be parsed.
+    """
+    pattern = os.path.join(VOSK_PYTHON_PATH, "_cffi_backend.cpython-*-x86_64-linux-gnu.so")
+    matches = glob.glob(pattern)
+    if not matches:
+        return
+    filename = os.path.basename(matches[0])
+    m = re.search(r"cpython-(\d+)-", filename)
+    if not m:
+        decky.logger.warning(
+            f"Could not parse Python version from bundled {filename}; "
+            f"skipping voice-deps compatibility check"
+        )
+        return
+    bundled = int(m.group(1))  # e.g. 313 for Python 3.13
+    running = sys.version_info.major * 100 + sys.version_info.minor
+    if bundled != running:
+        bundled_py = f"{bundled // 100}.{bundled % 100:02d}"
+        running_py = f"{sys.version_info.major}.{sys.version_info.minor}"
+        decky.logger.error(
+            f"Bundled voice deps are compiled for Python {bundled_py} "
+            f"but this SteamOS is running Python {running_py}. "
+            f"Voice recording will not work. Rebuild the deps for "
+            f"Python {running_py} (see backend/Dockerfile)."
+        )
 
 class Plugin:
     def __init__(self):
@@ -211,7 +257,7 @@ class Plugin:
                 # Set up environment variables for audio and Python path (like decky-dictation)
                 env = os.environ.copy()
                 env['PULSE_DEVICE'] = 'default'
-                env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+                env['PYTHONPATH'] = VOSK_PYTHON_PATH + ':' + env.get('PYTHONPATH', '')
                 # Critical Steam Deck environment variables from decky-dictation
                 env['XDG_RUNTIME_DIR'] = '/run/user/1000'
                 env['XDG_SESSION_TYPE'] = 'wayland'
@@ -279,7 +325,7 @@ class Plugin:
         # Try graceful termination via nerd-dictation end command
         try:
             env = os.environ.copy()
-            env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+            env['PYTHONPATH'] = VOSK_PYTHON_PATH + ':' + env.get('PYTHONPATH', '')
             subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
         except:
             pass
@@ -321,7 +367,7 @@ class Plugin:
                 # Try graceful termination via nerd-dictation end command
                 try:
                     env = os.environ.copy()
-                    env['PYTHONPATH'] = VOSK_LIB_PATH + ':' + env.get('PYTHONPATH', '')
+                    env['PYTHONPATH'] = VOSK_PYTHON_PATH + ':' + env.get('PYTHONPATH', '')
                     subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
                 except:
                     pass

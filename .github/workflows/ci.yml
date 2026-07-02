@@ -53,9 +53,9 @@ jobs:
           # Copy backend files
           cp main.py release/
           cp plugin.json release/
-          cp -r nerd-dictation release/ 2>/dev/null || true
-          cp -r vosk release/ 2>/dev/null || true
-          cp -r vosk-model release/ 2>/dev/null || true
+          cp -r py_modules/nerd-dictation release/ 2>/dev/null || true
+          cp -r py_modules/vosk release/ 2>/dev/null || true
+          cp -r py_modules/vosk-model release/ 2>/dev/null || true
 
           # Create zip package
           cd release
