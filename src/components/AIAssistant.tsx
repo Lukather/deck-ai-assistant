@@ -2,9 +2,6 @@ import { call } from "@decky/api";
 import { Button, Router, Spinner, TextField } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
-import ReactMarkdown from "react-markdown";
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import remarkGfm from "remark-gfm";
 import {
 	type GameEntry,
 	getGameNameByAppId,
@@ -21,53 +18,8 @@ type AppLifetimeNotification = { bRunning: boolean; unAppID: number };
 
 // Sanitization schema for AI-generated markdown
 // Allows safe markdown elements while blocking XSS vectors
-const sanitizeSchema = {
-	...defaultSchema,
-	tagNames: [
-		...(defaultSchema.tagNames || []),
-		// Allow code blocks
-		"code",
-		"pre",
-		"blockquote",
-		// Allow emphasis
-		"em",
-		"strong",
-		"del",
-		"s",
-		"u",
-		// Allow lists
-		"ul",
-		"ol",
-		"li",
-		// Allow links with restrictions
-		"a",
-		// Allow images with restrictions
-		"img",
-		// Allow tables
-		"table",
-		"thead",
-		"tbody",
-		"tr",
-		"th",
-		"td",
-	],
-	attributes: {
-		...(defaultSchema.attributes || {}),
-		// biome-ignore lint/suspicious/noExplicitAny: rehype-sanitize defaultSchema.attributes['*'] has no exported type
-		"*": [...((defaultSchema.attributes as any)?.["*"] || []), "className"],
-		a: ["href", "title", "target", "rel"],
-		img: ["src", "alt", "title", "width", "height"],
-	},
-	// Strip all event handlers and dangerous protocols
-	strip: [
-		"onerror",
-		"onload",
-		"onclick",
-		"onmouseover",
-		"javascript:",
-		"data:",
-	],
-};
+// Sanitization schema for AI-generated markdown
+// Allows safe markdown elements while blocking XSS vectors
 
 const AIAssistant = () => {
 	const [input, setInput] = useState("");
@@ -314,16 +266,7 @@ const AIAssistant = () => {
 								whiteSpace: "pre-wrap",
 							}}
 						>
-							{msg.role === "ai" ? (
-								<ReactMarkdown
-									remarkPlugins={[remarkGfm]}
-									rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
-								>
-									{msg.text}
-								</ReactMarkdown>
-							) : (
-								msg.text
-							)}
+							{msg.role === "ai" ? msg.text : msg.text}
 						</div>
 					</div>
 				))}
@@ -349,12 +292,7 @@ const AIAssistant = () => {
 								whiteSpace: "pre-wrap",
 							}}
 						>
-							<ReactMarkdown
-								remarkPlugins={[remarkGfm]}
-								rehypePlugins={[[rehypeSanitize, sanitizeSchema]]}
-							>
-								{typingText}
-							</ReactMarkdown>
+							{typingText}
 						</div>
 					</div>
 				)}
