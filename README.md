@@ -1,3 +1,5 @@
+### I'm writing this plugin with the help of AI (Mainly Cursor and Claude Code). I think AI (LLMs) is a great helping tool, I understand and very well know the ethical implications and I'm actively working with some communities to have laws and rules to be approved (mainly in EU, where I live). I'm also working to have an homelab and run my own Opensource LLM engine and model offline, it will not as good as Claude Code and co. but at least I will be a little more relieved to not participate in the un-ethical rush for the money. We can discuss on Mastodon, if you want @lukather@mastodon.uno
+
 Many many thanks to [@cboiangiu](https://github.com/cboiangiu) I've used his plugin as a learning object for the "speech-to-text- part of my plugin https://github.com/cboiangiu/decky-dictation
 
 # AI-ssistant Deck
@@ -14,29 +16,65 @@ Many many thanks to [@cboiangiu](https://github.com/cboiangiu) I've used his plu
 
 ## Installation
 
-1. **Build voice dependencies** (on development machine):
-   ```bash
-   cd backend
-   docker build -t deck-ai-assistant-backend .
-   docker run --rm -v "${PWD}/../output:/output" --env out=/output --entrypoint=/bin/sh deck-ai-assistant-backend -c 'cp -r /vosk /output/ && cp -r /nerd-dictation /output/ && cp -r /vosk-model /output/'
-   ```
+### 1. Build voice dependencies (one-time, on your dev machine)
 
-2. **Copy to Steam Deck**:
-   ```bash
-   # Copy main plugin files
-   scp -r dist/ main.py plugin.json deck@steamdeck:/home/deck/homebrew/plugins/deck-ai-assistant/
-   
-   # Copy voice dependencies  
-   scp -r output/vosk/ output/nerd-dictation/ output/vosk-model/ deck@steamdeck:/home/deck/homebrew/plugins/deck-ai-assistant/
-   ```
+Voice recording needs the `vosk` library, `nerd-dictation`, and an English speech model. Build them with Docker (Linux/macOS):
 
-3. **Restart Decky Loader** and enter your [Gemini API key](https://aistudio.google.com/app/apikey)
+```bash
+cd backend
+docker build -t deck-ai-voice .
+docker run --rm -v "$(pwd)/..:/output" --env out=/output deck-ai-voice
+```
 
-## Development
+This produces three directories next to the plugin source:
+- `vosk/` — Vosk speech recognition library
+- `nerd-dictation/` — Offline dictation tool
+- `vosk-model/` — English speech model
+
+If you'd rather install on the Steam Deck directly:
+
+```bash
+git clone https://github.com/ideasman42/nerd-dictation.git
+pip install vosk
+wget https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+unzip vosk-model-small-en-us-0.15.zip
+```
+
+> Voice input is captured from a PulseAudio monitor source (`PAREC`). Make sure PulseAudio is running on the Deck session before starting a recording, or the backend will report a startup failure.
+
+### 2. Build the plugin
 
 ```bash
 pnpm install
 pnpm build
+```
+
+### 3. Copy to Steam Deck
+
+```bash
+scp -r dist/ main.py plugin.json deck@steamdeck:/home/deck/homebrew/plugins/deck-ai-assistant/
+
+# Voice dependencies (skip if you don't need voice)
+scp -r vosk/ nerd-dictation/ vosk-model/ deck@steamdeck:/home/deck/homebrew/plugins/deck-ai-assistant/
+```
+
+Or use the bundled `deploy.sh` script.
+
+### 4. Restart Decky Loader
+
+Then enter your [Gemini API key](https://aistudio.google.com/app/apikey) in the plugin's AI Settings page.
+
+> Text chat works without the voice dependencies — only the microphone button is disabled until `vosk/`, `nerd-dictation/`, and `vosk-model/` are present.
+
+## Development
+
+```bash
+pnpm install          # Install dependencies
+pnpm build            # Build the frontend bundle
+pnpm lint             # Lint src/ with Biome
+pnpm lint:fix         # Auto-fix lint issues
+pnpm format           # Format src/ with Biome
+pnpm typecheck        # Run tsc --noEmit
 ```
 
 ## Getting Started
@@ -54,6 +92,4 @@ Mastodon: [@lukather](https://mastodon.uno/@lukather)
 
 ## 📄 License
 
-
 GNU GPL v2 License
-
