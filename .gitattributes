@@ -1,0 +1,8 @@
+# Force LF line endings on text files under src/ so tooling (Biome, Node, etc.)
+# behaves the same on Windows, macOS, and Linux checkouts. The leading `/` makes
+# the pattern relative to the repo root.
+#
+# `text=auto` lets Git auto-detect text vs binary; `eol=lf` normalizes text
+# files to LF on checkout. Binary assets in vosk/, vosk-model/, etc. are
+# unaffected because Git won't apply text rules to detected-binary files.
+/src/**    text=auto eol=lf
