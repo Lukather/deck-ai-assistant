@@ -4,11 +4,7 @@ export type GameEntry = { appid: number; name: string };
 
 // Fetch installed games using SteamClient.InstallFolder.GetInstallFolders
 export async function getInstalledGames(): Promise<GameEntry[]> {
-	if (
-		!window.SteamClient ||
-		!window.SteamClient.InstallFolder ||
-		!window.SteamClient.InstallFolder.GetInstallFolders
-	) {
+	if (!window.SteamClient?.InstallFolder?.GetInstallFolders) {
 		return [];
 	}
 	const folders = await window.SteamClient.InstallFolder.GetInstallFolders();

@@ -14,6 +14,11 @@ import {
 const STORAGE_KEY = "deck-ai-assistant:chatHistory";
 const LEGACY_STORAGE_KEY = "chatHistory";
 
+// Minimal local type for the SteamClient GameSessions notification payload.
+// The full shape is not exposed in any public type declaration; we only
+// touch two fields, so this captures what we actually use.
+type AppLifetimeNotification = { bRunning: boolean; unAppID: number };
+
 // Sanitization schema for AI-generated markdown
 // Allows safe markdown elements while blocking XSS vectors
 const sanitizeSchema = {
@@ -102,10 +107,9 @@ const AIAssistant = () => {
 
 		// Listen for game session changes
 		if (window.SteamClient?.GameSessions?.RegisterForAppLifetimeNotifications) {
-			// biome-ignore lint/suspicious/noExplicitAny: SteamClient appState event payload has no exported type
 			unregister =
 				window.SteamClient.GameSessions.RegisterForAppLifetimeNotifications(
-					(appState: any) => {
+					(appState: AppLifetimeNotification) => {
 						if (cancelled) return;
 						if (appState.bRunning) {
 							const appid = Number(appState.unAppID);
@@ -119,7 +123,7 @@ const AIAssistant = () => {
 		}
 		return () => {
 			cancelled = true;
-			if (unregister && unregister.unregister) unregister.unregister();
+			unregister?.unregister?.();
 		};
 	}, [games]);
 
@@ -218,7 +222,7 @@ const AIAssistant = () => {
 					typeof transcription === "string" &&
 					!transcription.startsWith("Error")
 				) {
-					setInput((prev) => prev + transcription + " ");
+					setInput((prev) => `${prev}${transcription} `);
 				}
 			} else {
 				const result = (await call("start_voice_recording")) as string;
