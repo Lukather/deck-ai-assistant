@@ -7,7 +7,6 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import {
 	type GameEntry,
-	getAllGames,
 	getGameNameByAppId,
 	getInstalledGames,
 } from "../utils/gameNameMap";
@@ -82,13 +81,7 @@ const AIAssistant = () => {
 
 	// Fetch games on mount
 	useEffect(() => {
-		getInstalledGames().then((installed) => {
-			if (installed.length > 0) {
-				setGames(installed);
-			} else {
-				setGames(getAllGames());
-			}
-		});
+		getInstalledGames().then(setGames);
 	}, []);
 
 	// Detect active game using Router.MainRunningApp and SteamClient events, mapping AppID to name

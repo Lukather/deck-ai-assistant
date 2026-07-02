@@ -26,26 +26,6 @@ export async function getInstalledGames(): Promise<GameEntry[]> {
 	return games;
 }
 
-// Fetch all games if collectionStore is available
-export function getAllGames(): GameEntry[] {
-	// biome-ignore lint/suspicious/noExplicitAny: collectionStore is an untyped global on the Steam Deck window
-	const collectionStore = (window as any).collectionStore;
-	if (
-		!collectionStore ||
-		!collectionStore.allGamesCollection ||
-		!collectionStore.allGamesCollection.allApps
-	) {
-		return [];
-	}
-	return collectionStore.allGamesCollection.allApps.map(
-		// biome-ignore lint/suspicious/noExplicitAny: collectionStore app entry has no exported type
-		(app: any) => ({
-			appid: app.appid,
-			name: app.display_name,
-		}),
-	);
-}
-
 // Lookup game name by AppID
 export function getGameNameByAppId(appid: number, games: GameEntry[]): string {
 	const match = games.find((game) => game.appid === appid);

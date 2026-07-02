@@ -17,7 +17,7 @@ const SettingsPage = () => {
 					setIsKeyValid(true);
 				}
 			} catch (error) {
-				console.error("Errore nel recupero chiave:", error);
+				console.error("Error reading key:", error);
 				setIsKeyValid(false);
 			}
 		};
@@ -34,18 +34,18 @@ const SettingsPage = () => {
 				apiKey.trim(),
 			);
 			toaster.toast({
-				title: "Salvataggio riuscito",
-				body: result || "La chiave è stata salvata.",
+				title: "Key saved",
+				body: result || "The key was saved.",
 				duration: 5000,
 			});
 			setIsKeyValid(true);
 		} catch (error) {
 			toaster.toast({
-				title: "Errore nel salvataggio",
-				body: "La chiave non è stata salvata.",
+				title: "Save failed",
+				body: "The key was not saved.",
 				duration: 5000,
 			});
-			console.error("Errore nel salvataggio chiave:", error);
+			console.error("Error saving key:", error);
 			setIsKeyValid(false);
 		} finally {
 			setSaving(false);
