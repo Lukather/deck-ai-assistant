@@ -2,6 +2,7 @@ import decky
 import os
 import json
 import asyncio
+import time
 import httpx
 import traceback
 import tempfile
@@ -10,6 +11,11 @@ from httpx import ReadTimeout
 
 # Use Decky Loader recommended paths for settings
 CONFIG_PATH = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "config.json")
+
+# Default Gemini model. Promoted to a user setting in a follow-up; the URL
+# and all log lines read this constant.
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 # Plugin directory paths for bundled dependencies
 PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,63 +62,79 @@ class Plugin:
             masked_key = f"****{api_key[-4:]}" if len(api_key) >= 4 else "****"
             decky.logger.info(f"API key used: {masked_key}")
 
-            # Build prompt from conversation if available
-            if conversation and isinstance(conversation, list) and len(conversation) > 0:
-                # Format: User: ...\nAI: ...\n etc.
-                prompt_lines = []
-                if game and isinstance(game, dict) and game.get('name'):
-                    prompt_lines.append(f"[Game: {game['name']} (AppID: {game['appid']})]")
+            # Build a stable system instruction. Carries role + persistent
+            # context (current game) that the model should always see.
+            system_parts = [
+                "You are an AI assistant for a Steam Deck user. Be concise and helpful."
+            ]
+            if game and isinstance(game, dict) and game.get('name'):
+                system_parts.append(
+                    f"The user is currently playing {game['name']} (Steam AppID: {game['appid']}). "
+                    "Use this context when relevant, but do not force game references if the question is unrelated."
+                )
+            system_instruction = {"parts": [{"text": " ".join(system_parts)}]}
+
+            # Build a structured multi-turn contents array. The frontend sends
+            # the full transcript including the new user message; map 'ai' to
+            # Gemini's 'model' role and skip empty entries.
+            contents = []
+            if conversation and isinstance(conversation, list):
                 for msg in conversation:
                     role = msg.get('role', '')
-                    text = msg.get('text', '')
+                    text = (msg.get('text') or '').strip()
+                    if not text:
+                        continue
                     if role == 'user':
-                        prompt_lines.append(f"User: {text}")
+                        contents.append({"role": "user", "parts": [{"text": text}]})
                     elif role == 'ai':
-                        prompt_lines.append(f"AI: {text}")
-                prompt = "\n".join(prompt_lines)
-            else:
-                # Fallback to old behavior
-                if game and isinstance(game, dict) and game.get('name'):
-                    prompt = f"[Game: {game['name']} (AppID: {game['appid']})]\n{question.strip()}"
-                else:
-                    prompt = question.strip()
+                        contents.append({"role": "model", "parts": [{"text": text}]})
 
-            # Prepare Gemini request
-            headers = {
-                "Content-Type": "application/json"
-            }
+            # Safety net: if the transcript is missing/empty, just send the question.
+            if not contents:
+                contents.append({"role": "user", "parts": [{"text": question.strip()}]})
 
             gemini_payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            { "text": prompt }
-                        ]
-                    }
-                ]
+                "systemInstruction": system_instruction,
+                "contents": contents,
             }
 
-            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + api_key
+            headers = {"Content-Type": "application/json"}
+            url = f"{GEMINI_API_BASE}/{GEMINI_MODEL}:generateContent?key={api_key}"
 
-            decky.logger.info(f"Gemini request: {gemini_payload}")
+            # Metadata-only log line. No message text, no API key in the URL.
+            decky.logger.info(f"Gemini call: model={GEMINI_MODEL} turns={len(contents)}")
 
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
+                    start = time.monotonic()
                     response = await client.post(url, headers=headers, json=gemini_payload)
+                    latency = time.monotonic() - start
             except ReadTimeout:
                 decky.logger.error("Timeout while waiting for Gemini API response.")
                 return "Timeout: The AI service took too long to respond. Please try again."
 
-            decky.logger.info(f"Raw response: {response.text}")
-
+            # Metadata-only response log. No response body.
             if response.status_code != 200:
-                decky.logger.error(f"HTTP error {response.status_code}: {response.text}")
+                decky.logger.error(
+                    f"Gemini HTTP {response.status_code} in {latency:.2f}s"
+                )
                 return f"Request error: {response.status_code}"
 
             data = response.json()
 
+            # Log token usage if Gemini returned it. No message text.
+            usage = data.get("usageMetadata") or {}
+            if usage:
+                decky.logger.info(
+                    f"Gemini tokens: prompt={usage.get('promptTokenCount')} "
+                    f"output={usage.get('candidatesTokenCount')} "
+                    f"total={usage.get('totalTokenCount')} "
+                    f"latency={latency:.2f}s"
+                )
+
             output = data["candidates"][0]["content"]["parts"][0]["text"]
-            decky.logger.info(f"Gemini response: {output}")
+            # Don't log the response text. Only its length.
+            decky.logger.info(f"Gemini output: {len(output)} chars")
             return output
 
         except Exception as e:
