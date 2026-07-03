@@ -309,7 +309,7 @@ class Plugin:
                     cmd,
                     env=env,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT  # Combine stderr with stdout to capture all output
+                    stderr=subprocess.PIPE,  # Keep stderr separate so errors don't read as transcription
                 )
 
                 decky.logger.info(f"Dictation started with PID {self.dictation_process.pid}")
@@ -319,8 +319,11 @@ class Plugin:
 
                 # Check if process died immediately (error during startup)
                 if self.dictation_process.poll() is not None:
-                    stdout, _ = self.dictation_process.communicate()
-                    error_msg = stdout.decode().strip() if stdout else "Unknown error"
+                    stdout, stderr = self.dictation_process.communicate()
+                    parts = []
+                    if stdout: parts.append(stdout.decode().strip())
+                    if stderr: parts.append(stderr.decode().strip())
+                    error_msg = " | ".join(p for p in parts if p) or "Unknown error"
                     decky.logger.error(f"nerd-dictation failed to start: {error_msg}")
                     self.dictation_process = None
                     return f"Failed to start voice recording: {error_msg}"
@@ -345,35 +348,35 @@ class Plugin:
         
         # Check if already dead
         if proc.poll() is not None:
-            # Already dead, just close pipes
+            # Already dead; drain pipes to avoid ResourceWarnings, then close.
             try:
-                proc.stdout.close()
-            except:
+                proc.communicate(timeout=1)
+            except Exception:
                 pass
             return
         
-        # Try graceful termination via nerd-dictation end command
+        # Signal graceful stop via nerd-dictation end (cookie), then wait for it.
+        # Don't terminate first -- that kills the process mid-flush.
         try:
             env = os.environ.copy()
             env['PYTHONPATH'] = VOSK_PYTHON_PATH + ':' + env.get('PYTHONPATH', '')
-            subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
-        except:
+            subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=5, env=env)
+        except Exception:
             pass
         
-        # If still alive, terminate
-        if proc.poll() is None:
+        try:
+            proc.communicate(timeout=8)
+        except subprocess.TimeoutExpired:
             proc.terminate()
             try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
+                proc.communicate(timeout=3)
+            except Exception:
                 proc.kill()
-                proc.wait()
-        
-        # Close pipes
-        try:
-            proc.stdout.close()
-        except:
-            pass
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
     async def stop_voice_recording(self) -> str:
         """
@@ -394,34 +397,47 @@ class Plugin:
                 
                 decky.logger.info("Terminating nerd-dictation process")
                 
-                # Try graceful termination via nerd-dictation end command
+                # Try graceful stop via nerd-dictation end command. This signals
+                # the begin process (via cookie) to finish, flush its transcription
+                # to stdout, and exit. Do NOT terminate the begin process first --
+                # killing it mid-flush is exactly what produces 'write() failed:
+                # Broken pipe' as the 'transcription'.
                 try:
                     env = os.environ.copy()
                     env['PYTHONPATH'] = VOSK_PYTHON_PATH + ':' + env.get('PYTHONPATH', '')
-                    subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=3, env=env)
-                except:
-                    pass
+                    subprocess.run(['python3', NERD_DICTATION_PATH, 'end'], timeout=5, env=env)
+                except Exception as e:
+                    decky.logger.warning(f"nerd-dictation end command failed: {e}")
                 
-                # If still alive, terminate/kill
-                if proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait()
-                
-                # Read transcription (ONLY ONCE - communicate closes pipes)
+                # Collect stdout (the transcription). communicate() also waits for
+                # the process to finish, so it doubles as our 'did end bring it down'
+                # check. Only fall back to terminate/kill if it's still alive after.
                 transcription = ""
                 try:
-                    stdout, _ = proc.communicate(timeout=2)
+                    stdout, stderr = proc.communicate(timeout=8)
+                    if stderr:
+                        decky.logger.info(f"nerd-dictation stderr: {stderr.decode().strip()}")
                     if stdout:
                         transcription = stdout.decode().strip()
                         decky.logger.info(f"Transcription from stdout: '{transcription}'")
                     else:
                         decky.logger.info("No stdout data received")
+                except subprocess.TimeoutExpired:
+                    # end didn't bring it down; force-kill and salvage what we can.
+                    decky.logger.warning("nerd-dictation didn't exit after end; terminating")
+                    proc.terminate()
+                    try:
+                        stdout, stderr = proc.communicate(timeout=3)
+                        if stdout:
+                            transcription = stdout.decode().strip()
+                    except Exception:
+                        proc.kill()
                 except Exception as e:
                     decky.logger.error(f"Error reading transcription: {e}")
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
                 
                 decky.logger.info("Dictation process stopped")
                 
