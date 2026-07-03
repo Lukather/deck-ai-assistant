@@ -33,17 +33,36 @@ VOSK_MODEL_PATH = os.path.join(PY_MODULES_DIR, "vosk-model")
 VOSK_PYTHON_PATH = os.path.join(PY_MODULES_DIR, "vosk")
 
 
+def _subprocess_python_version() -> tuple[int, int] | None:
+    """Return (major, minor) of the `python3` that runs nerd-dictation.
+
+    nerd-dictation is spawned as a `python3` subprocess, which is the system
+    interpreter, not the plugin's own. The bundled cffi .so must match *that*
+    interpreter's ABI, so this is the version we compare against.
+    """
+    try:
+        out = subprocess.check_output(
+            ["python3", "-c", "import sys; print(sys.version_info.major, sys.version_info.minor)"],
+            text=True, timeout=5, stderr=subprocess.STDOUT,
+        ).strip()
+        major_str, minor_str = out.split()
+        return int(major_str), int(minor_str)
+    except Exception as e:
+        decky.logger.warning(f"Could not determine system python3 version: {e}")
+        return None
+
+
 def _check_voice_deps_python_version() -> None:
-    """Compare the bundled cffi .so against the running Python interpreter.
+    """Compare the bundled cffi .so against the python3 that runs nerd-dictation.
 
     The bundled vosk ships a cffi .so compiled for one specific CPython ABI
-    (e.g. cpython-313-x86_64-linux-gnu.so for Python 3.13). If the user's
-    SteamOS Python is a different version, the .so cannot be loaded and
-    voice recording will fail at import time with a confusing error. Surface
-    this clearly at plugin start so the failure mode is obvious.
+    (e.g. cpython-313-x86_64-linux-gnu.so for Python 3.13). nerd-dictation is
+    spawned as a `python3` subprocess, so the .so must match the system
+    python3, not the plugin's own interpreter. A mismatch surfaces as a
+    confusing ImportError mid-recording; surface it clearly at plugin start.
 
-    Does nothing if the bundled cffi .so is not present (e.g. the user is
-    relying on a system-installed vosk) or if the version can't be parsed.
+    Does nothing if the bundled cffi .so is not present (e.g. relying on a
+    system-installed vosk) or if the version can't be parsed.
     """
     pattern = os.path.join(VOSK_PYTHON_PATH, "_cffi_backend.cpython-*-x86_64-linux-gnu.so")
     matches = glob.glob(pattern)
@@ -58,21 +77,32 @@ def _check_voice_deps_python_version() -> None:
         )
         return
     bundled = int(m.group(1))  # e.g. 313 for Python 3.13
-    running = sys.version_info.major * 100 + sys.version_info.minor
+    sub = _subprocess_python_version()
+    if sub is None:
+        return
+    running = sub[0] * 100 + sub[1]
     if bundled != running:
         bundled_py = f"{bundled // 100}.{bundled % 100:02d}"
-        running_py = f"{sys.version_info.major}.{sys.version_info.minor}"
+        running_py = f"{sub[0]}.{sub[1]}"
         decky.logger.error(
             f"Bundled voice deps are compiled for Python {bundled_py} "
-            f"but this SteamOS is running Python {running_py}. "
-            f"Voice recording will not work. Rebuild the deps for "
-            f"Python {running_py} (see backend/Dockerfile)."
+            f"but the system python3 (used by nerd-dictation) is {running_py}. "
+            f"Voice recording will not work. Rebuild the voice deps for "
+            f"Python {running_py}."
+        )
+    else:
+        decky.logger.info(
+            f"Voice deps ABI check OK: bundled cpython-{bundled} matches system python3 {sub[0]}.{sub[1]}"
         )
 
 class Plugin:
     def __init__(self):
         self.dictation_process = None
         self._voice_lock = asyncio.Lock()  # Prevent concurrent voice operations
+        # Run the ABI check at load so a mismatch is logged immediately, not
+        # as an ImportError mid-recording. Blocking subprocess call is fine
+        # here: __init__ runs before the plugin's event loop starts.
+        _check_voice_deps_python_version()
         decky.logger.info("Plugin initialized with voice recording support")
     
     async def ask_question(self, payload) -> str:
