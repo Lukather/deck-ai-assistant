@@ -226,22 +226,11 @@ const AIAssistant = () => {
 				const name = getGameNameByAppId(activeGame.appid, games);
 				setActiveGame({ appid: activeGame.appid, name });
 			}
-			// Fetch the game's landscape/hero image via the appStore
-			try {
-				const overview = window.appStore?.GetAppOverviewByAppID?.(
-					activeGame.appid,
-				);
-				if (overview) {
-					const url = window.appStore?.GetLandscapeImageURLForApp?.(
-						overview as unknown as Parameters<
-							NonNullable<typeof window.appStore>["GetLandscapeImageURLForApp"]
-						>[0],
-					);
-					if (url) setGameImageUrl(url);
-				}
-			} catch {
-				// appStore not available, image stays null
-			}
+			// Steam CDN capsule image (460x215 header). appStore is not
+			// available in the Decky plugin sandbox, so construct the URL directly.
+			setGameImageUrl(
+				`https://cdn.cloudflare.steamstatic.com/steam/apps/${activeGame.appid}/header.jpg`,
+			);
 		}
 	}, [games, activeGame]);
 
