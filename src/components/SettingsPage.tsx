@@ -1,60 +1,97 @@
 import { call, toaster } from "@decky/api";
-import { Button, PanelSection, TextField } from "@decky/ui";
+import { Button, Dropdown, Field, PanelSection, TextField } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCheckCircle, FaKey, FaTimesCircle } from "react-icons/fa";
+
+const SUPPORTED_MODELS = [
+	"gemini-2.5-flash",
+	"gemini-2.5-pro",
+	"gemini-2.0-flash",
+	"gemini-2.0-flash-lite",
+	"gemini-1.5-flash",
+	"gemini-1.5-pro",
+];
+
+const modelOptions = SUPPORTED_MODELS.map((m) => ({
+	data: m,
+	label: m,
+}));
+
+interface SaveResult {
+	valid: boolean;
+	message: string;
+}
 
 const SettingsPage = () => {
 	const [apiKey, setApiKey] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [isKeyValid, setIsKeyValid] = useState(false);
+	const [model, setModel] = useState("gemini-2.5-flash");
+	const [modelSaving, setModelSaving] = useState(false);
 
 	useEffect(() => {
-		const fetchKey = async () => {
+		const init = async () => {
 			try {
 				const savedKey = await call<[], string>("get_api_key");
-				if (savedKey && savedKey.trim().length > 10) {
+				if (savedKey?.trim()) {
 					setApiKey(savedKey);
-					setIsKeyValid(true);
+					// Probe the saved key so the badge reflects real validity.
+					const valid = await call<[], boolean>("validate_api_key");
+					setIsKeyValid(valid);
 				}
+				const savedModel = await call<[], string>("get_model");
+				if (savedModel) setModel(savedModel);
 			} catch (error) {
-				console.error("Error reading key:", error);
+				console.error("Settings init error:", error);
 				setIsKeyValid(false);
 			}
 		};
-
-		fetchKey();
+		init();
 	}, []);
 
 	const handleSave = async () => {
 		if (!apiKey.trim()) return;
 		setSaving(true);
 		try {
-			const result = await call<[string], string>(
+			const result = await call<[string], SaveResult>(
 				"save_api_key",
 				apiKey.trim(),
 			);
+			setIsKeyValid(result.valid);
 			toaster.toast({
-				title: "Key saved",
-				body: result || "The key was saved.",
+				title: result.valid ? "Key verified" : "Key invalid",
+				body: result.message,
 				duration: 5000,
 			});
-			setIsKeyValid(true);
 		} catch (error) {
+			setIsKeyValid(false);
 			toaster.toast({
 				title: "Save failed",
 				body: "The key was not saved.",
 				duration: 5000,
 			});
 			console.error("Error saving key:", error);
-			setIsKeyValid(false);
 		} finally {
 			setSaving(false);
 		}
 	};
 
+	const handleModelChange = async (data: { data: string }) => {
+		const newModel = data.data;
+		setModel(newModel);
+		setModelSaving(true);
+		try {
+			await call<[string], string>("set_model", newModel);
+		} catch (error) {
+			console.error("Error saving model:", error);
+		} finally {
+			setModelSaving(false);
+		}
+	};
+
 	return (
 		<div style={{ paddingTop: "52px" }}>
-			<PanelSection title="🔐 AI Settings">
+			<PanelSection title="AI Settings">
 				<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
 					<FaKey size={16} />
 					<TextField
@@ -77,12 +114,12 @@ const SettingsPage = () => {
 					disabled={saving || !apiKey.trim()}
 				>
 					<span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-						🔒 <span>{saving ? "Saving..." : "Save key"}</span>
+						<span>{saving ? "Saving..." : "Save key"}</span>
 					</span>
 				</Button>
 			</PanelSection>
 
-			<PanelSection title="🧠 Gemini Status">
+			<PanelSection title="Gemini Status">
 				<div
 					style={{
 						display: "flex",
@@ -92,10 +129,23 @@ const SettingsPage = () => {
 					}}
 				>
 					{isKeyValid ? <FaCheckCircle /> : <FaTimesCircle />}
-					{isKeyValid
-						? "✓ API is valid and active"
-						: "✗ Key is invalid or missing"}
+					{isKeyValid ? "API key is valid" : "API key is invalid or missing"}
 				</div>
+			</PanelSection>
+
+			<PanelSection title="Model">
+				<Field
+					label="Gemini model"
+					description={modelSaving ? "Saving..." : undefined}
+				>
+					<Dropdown
+						rgOptions={modelOptions}
+						selectedOption={model}
+						onChange={handleModelChange}
+						menuLabel="Select model"
+						disabled={modelSaving}
+					/>
+				</Field>
 			</PanelSection>
 		</div>
 	);

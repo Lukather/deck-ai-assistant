@@ -20,6 +20,17 @@ CONFIG_PATH = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "config.json")
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
+# Models offered in the Settings picker. Curated to current Gemini API
+# variants; the user can switch at any time.
+SUPPORTED_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+]
+
 # Sliding window over the conversation sent to Gemini. The full transcript
 # still lives in localStorage and renders in the UI, but only the last N
 # turns go into the prompt so long sessions don't exceed the context window.
@@ -38,6 +49,47 @@ VOSK_MODEL_PATH = os.path.join(PY_MODULES_DIR, "vosk-model")
 # dependency tree. Used as PYTHONPATH for the nerd-dictation subprocess
 # (which imports vosk via its own sys.path, not through Decky).
 VOSK_PYTHON_PATH = os.path.join(PY_MODULES_DIR, "vosk")
+
+
+def _read_config() -> dict:
+    """Load the plugin config JSON, returning {} if missing/corrupt."""
+    if not os.path.exists(CONFIG_PATH):
+        return {}
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def _write_config(cfg: dict) -> None:
+    """Persist config, creating the settings dir and restricting permissions."""
+    os.makedirs(decky.DECKY_PLUGIN_SETTINGS_DIR, exist_ok=True)
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(cfg, f)
+    os.chmod(CONFIG_PATH, 0o600)
+
+
+def _get_config_model() -> str:
+    """Return the saved model, falling back to GEMINI_MODEL if unset/invalid."""
+    model = _read_config().get("model", GEMINI_MODEL)
+    return model if model in SUPPORTED_MODELS else GEMINI_MODEL
+
+
+async def _probe_gemini_key(api_key: str) -> tuple[bool, str]:
+    """Cheap authenticated call to check the API key works.
+
+    Hits models.list with pageSize=1 (minimal payload). Returns (ok, message).
+    """
+    url = f"{GEMINI_API_BASE}?key={api_key}&pageSize=1"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+    except Exception as e:
+        return False, f"Probe failed: {e}"
+    if resp.status_code == 200:
+        return True, "Key verified."
+    return False, f"Gemini rejected the key (HTTP {resp.status_code})."
 
 
 def _subprocess_python_version() -> tuple[int, int] | None:
@@ -189,10 +241,11 @@ class Plugin:
             }
 
             headers = {"Content-Type": "application/json"}
-            url = f"{GEMINI_API_BASE}/{GEMINI_MODEL}:generateContent?key={api_key}"
+            model = _get_config_model()
+            url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
 
             # Metadata-only log line. No message text, no API key in the URL.
-            decky.logger.info(f"Gemini call: model={GEMINI_MODEL} turns={len(contents)}")
+            decky.logger.info(f"Gemini call: model={model} turns={len(contents)}")
 
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
@@ -231,29 +284,50 @@ class Plugin:
             decky.logger.error(f"Error in ask_question: {str(e)}\n{traceback.format_exc()}")
             return f"Request error: {str(e)}"
 
-    async def save_api_key(self, key: str) -> str:
+    async def save_api_key(self, key: str) -> dict:
+        """Save the key and probe Gemini to verify it works.
+
+        Returns {"valid": bool, "message": str} so the frontend can drive
+        the toast + badge from the probe result, not the key's length.
+        The key is saved either way so the user can edit it without retyping.
+        """
+        key = (key or "").strip()
+        if not key:
+            return {"valid": False, "message": "Key is empty."}
         try:
-            # Ensure the settings directory exists
-            os.makedirs(decky.DECKY_PLUGIN_SETTINGS_DIR, exist_ok=True)
-            with open(CONFIG_PATH, "w") as f:
-                json.dump({ "api_key": key.strip() }, f)
-            os.chmod(CONFIG_PATH, 0o600)  # Security: restrict file permissions
-            decky.logger.info("API key saved.")
-            return "Key saved successfully."
+            cfg = _read_config()
+            cfg["api_key"] = key
+            _write_config(cfg)
+            decky.logger.info("API key saved, probing Gemini...")
+            ok, msg = await _probe_gemini_key(key)
+            decky.logger.info(f"Key probe: valid={ok} ({msg})")
+            return {"valid": ok, "message": msg}
         except Exception as e:
             decky.logger.error(f"Error saving key: {str(e)}")
-            return "Error saving key."
+            return {"valid": False, "message": f"Failed to save key: {e}"}
+
+    async def validate_api_key(self) -> bool:
+        """Probe the currently-saved key. Used on mount to set the badge."""
+        key = _read_config().get("api_key", "")
+        if not key:
+            return False
+        ok, _ = await _probe_gemini_key(key)
+        return ok
 
     async def get_api_key(self) -> str:
-        try:
-            if not os.path.exists(CONFIG_PATH):
-                return ""
-            with open(CONFIG_PATH, "r") as f:
-                data = json.load(f)
-            return data.get("api_key", "")
-        except Exception as e:
-            decky.logger.error(f"Error reading key: {str(e)}")
-            return ""
+        return _read_config().get("api_key", "")
+
+    async def get_model(self) -> str:
+        return _get_config_model()
+
+    async def set_model(self, model: str) -> str:
+        if model not in SUPPORTED_MODELS:
+            return f"Unsupported model: {model}"
+        cfg = _read_config()
+        cfg["model"] = model
+        _write_config(cfg)
+        decky.logger.info(f"Model set to {model}")
+        return "Model saved."
 
     async def log_message(self, message: str) -> str:
         """
