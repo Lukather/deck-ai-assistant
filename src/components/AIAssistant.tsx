@@ -1,6 +1,6 @@
-import { call } from "@decky/api";
+import { call, toaster } from "@decky/api";
 import { Button, Router, Spinner, TextField } from "@decky/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
 import {
 	type GameEntry,
@@ -28,6 +28,10 @@ const AIAssistant = () => {
 	>([]);
 	const [loading, setLoading] = useState(false);
 	const [typingText, setTypingText] = useState<string | null>(null);
+	// Monotonic ID per send. Incrementing this aborts the in-flight typing
+	// animation: the running effect captures the id at start and bails out if
+	// it no longer matches. Keeps exactly one AI bubble per question (#15).
+	const turnIdRef = useRef(0);
 	const [activeGame, setActiveGame] = useState<{
 		appid: number;
 		name: string;
@@ -123,6 +127,9 @@ const AIAssistant = () => {
 		if (!input.trim()) return;
 		const question = input.trim();
 
+		// Abort any in-flight typing animation: a new turn id makes the
+		// running effect bail out, and we commit the previous AI text as-is.
+		const myTurnId = ++turnIdRef.current;
 		setLoading(true);
 		setTypingText(null);
 		// Prepare the new conversation including the new user message
@@ -137,30 +144,38 @@ const AIAssistant = () => {
 			const payload = activeGame
 				? { question, game: activeGame, conversation: updatedConversation }
 				: { question, conversation: updatedConversation };
-			const result = await call("ask_question", payload);
-			const aiText =
-				typeof result === "string" ? result : "❌ Error: Invalid AI response.";
-
-			// Simula digitazione carattere per carattere
-			let temp = "";
-			setTypingText("");
-			for (const char of aiText) {
-				temp += char;
-				setTypingText(temp);
-				await new Promise((res) => setTimeout(res, 30)); // Velocità digitazione
+			const result = await call<[unknown], string>("ask_question", payload);
+			if (typeof result !== "string") {
+				throw new Error("Invalid AI response.");
 			}
 
-			setConversation((prev) => [...prev, { role: "ai", text: aiText }]);
-			setTypingText(null);
+			// Type out the AI text. Keyed on turnIdRef so a newer send aborts us.
+			setTypingText("");
+			let temp = "";
+			for (const char of result) {
+				if (turnIdRef.current !== myTurnId) return; // aborted by a newer send
+				temp += char;
+				setTypingText(temp);
+				await new Promise((res) => setTimeout(res, 30));
+			}
+			// Only commit if we weren't aborted mid-animation.
+			if (turnIdRef.current === myTurnId) {
+				setConversation((prev) => [...prev, { role: "ai", text: result }]);
+				setTypingText(null);
+			}
 		} catch (err) {
+			// Aborted by a newer send: leave the new send in charge.
+			if (turnIdRef.current !== myTurnId) return;
 			setTypingText(null);
-			setConversation((prev) => [
-				...prev,
-				{ role: "ai", text: "❌ Error in the request." },
-			]);
-			console.error(err);
+			const msg = err instanceof Error ? err.message : "Request failed.";
+			toaster.toast({
+				title: "Request failed",
+				body: msg,
+				duration: 5000,
+			});
+			// No AI bubble appended on failure (#15).
 		} finally {
-			setLoading(false);
+			if (turnIdRef.current === myTurnId) setLoading(false);
 		}
 	};
 
@@ -168,28 +183,23 @@ const AIAssistant = () => {
 		let started = false;
 		try {
 			if (isRecording) {
-				const transcription = (await call("stop_voice_recording")) as string;
-				if (
-					transcription &&
-					typeof transcription === "string" &&
-					!transcription.startsWith("Error")
-				) {
+				const transcription = await call<[], string>("stop_voice_recording");
+				if (typeof transcription === "string" && transcription.trim()) {
 					setInput((prev) => `${prev}${transcription} `);
 				}
 			} else {
-				const result = (await call("start_voice_recording")) as string;
-				if (
-					result &&
-					typeof result === "string" &&
-					result.startsWith("Error")
-				) {
-					throw new Error(result);
-				}
+				await call<[], string>("start_voice_recording");
 				started = true;
 				setIsRecording(true);
 			}
 		} catch (error) {
-			await call("log_message", `Voice handler error: ${error}`);
+			const msg = error instanceof Error ? error.message : "Voice error.";
+			toaster.toast({
+				title: "Voice error",
+				body: msg,
+				duration: 5000,
+			});
+			await call("log_message", `Voice handler error: ${msg}`).catch(() => {});
 		} finally {
 			if (!started) setIsRecording(false);
 		}

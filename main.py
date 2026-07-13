@@ -38,6 +38,12 @@ SUPPORTED_MODELS = [
 # user-facing setting is out of scope (#13).
 MAX_CONTEXT_TURNS = 20
 
+
+class PluginError(Exception):
+    """User-facing backend failure. The loader maps an uncaught exception to a
+    rejected promise on the frontend, so raising this surfaces a structured
+    error instead of returning a magic "Error..." string (#15)."""
+
 # Plugin directory paths for bundled dependencies. The Decky loader adds
 # `py_modules/` to sys.path automatically, so importable Python packages
 # should live there.
@@ -178,20 +184,17 @@ class Plugin:
 
             # Question validation
             if not question or not isinstance(question, str) or not question.strip():
-                decky.logger.warning("Invalid or empty question.")
-                return "Invalid question."
+                raise PluginError("Question is empty.")
 
             # Retrieve API key from settings directory
             if not os.path.exists(CONFIG_PATH):
-                decky.logger.warning("Config file not found.")
-                return "API key not found."
+                raise PluginError("API key not found. Set it in AI Settings.")
 
             with open(CONFIG_PATH, "r") as f:
                 api_key = json.load(f).get("api_key", "")
 
             if not api_key:
-                decky.logger.warning("API key is empty.")
-                return "API key not set."
+                raise PluginError("API key is not set. Add it in AI Settings.")
 
             # Security: Never log full API key - mask all but last 4 chars
             masked_key = f"****{api_key[-4:]}" if len(api_key) >= 4 else "****"
@@ -254,14 +257,17 @@ class Plugin:
                     latency = time.monotonic() - start
             except ReadTimeout:
                 decky.logger.error("Timeout while waiting for Gemini API response.")
-                return "Timeout: The AI service took too long to respond. Please try again."
+                raise PluginError("The AI service took too long to respond. Try again.")
+            except Exception as e:
+                decky.logger.error(f"Gemini request failed: {e}")
+                raise PluginError(f"Could not reach the AI service: {e}")
 
             # Metadata-only response log. No response body.
             if response.status_code != 200:
                 decky.logger.error(
                     f"Gemini HTTP {response.status_code} in {latency:.2f}s"
                 )
-                return f"Request error: {response.status_code}"
+                raise PluginError(f"Gemini returned HTTP {response.status_code}.")
 
             data = response.json()
 
@@ -275,14 +281,21 @@ class Plugin:
                     f"latency={latency:.2f}s"
                 )
 
-            output = data["candidates"][0]["content"]["parts"][0]["text"]
+            try:
+                output = data["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError, TypeError) as e:
+                decky.logger.error(f"Unexpected Gemini response shape: {e}")
+                raise PluginError("The AI service returned an unexpected response.")
             # Don't log the response text. Only its length.
             decky.logger.info(f"Gemini output: {len(output)} chars")
             return output
 
+        except PluginError:
+            # User-facing errors propagate to the frontend as rejected promises.
+            raise
         except Exception as e:
             decky.logger.error(f"Error in ask_question: {str(e)}\n{traceback.format_exc()}")
-            return f"Request error: {str(e)}"
+            raise PluginError(f"Unexpected error: {e}")
 
     async def save_api_key(self, key: str) -> dict:
         """Save the key and probe Gemini to verify it works.
@@ -322,7 +335,7 @@ class Plugin:
 
     async def set_model(self, model: str) -> str:
         if model not in SUPPORTED_MODELS:
-            return f"Unsupported model: {model}"
+            raise PluginError(f"Unsupported model: {model}")
         cfg = _read_config()
         cfg["model"] = model
         _write_config(cfg)
@@ -366,11 +379,11 @@ class Plugin:
                 # Check if bundled nerd-dictation is available
                 if not os.path.exists(NERD_DICTATION_PATH):
                     decky.logger.error(f"Bundled nerd-dictation not found at {NERD_DICTATION_PATH}")
-                    return "Error: nerd-dictation not available in plugin"
+                    raise PluginError("nerd-dictation is not available in the plugin.")
 
                 if not os.path.exists(VOSK_MODEL_PATH):
                     decky.logger.error(f"Vosk model not found at {VOSK_MODEL_PATH}")
-                    return "Error: Vosk model not available in plugin"
+                    raise PluginError("Vosk model is not available in the plugin.")
 
                 # Set up environment variables for audio and Python path (like decky-dictation)
                 env = os.environ.copy()
@@ -414,14 +427,16 @@ class Plugin:
                     error_msg = " | ".join(p for p in parts if p) or "Unknown error"
                     decky.logger.error(f"nerd-dictation failed to start: {error_msg}")
                     self.dictation_process = None
-                    return f"Failed to start voice recording: {error_msg}"
+                    raise PluginError(f"Voice recording failed to start: {error_msg}")
 
                 return "Voice recording started successfully"
 
+            except PluginError:
+                raise
             except Exception as e:
                 decky.logger.error(f"Error starting voice recording: {str(e)}\n{traceback.format_exc()}")
                 self.dictation_process = None
-                return f"Error: {str(e)}"
+                raise PluginError(f"Could not start voice recording: {e}")
 
     async def _cleanup_dictation_process(self) -> None:
         """
@@ -477,7 +492,7 @@ class Plugin:
                 decky.logger.info("Stopping voice recording...")
                 
                 if self.dictation_process is None:
-                    return "Error: No recording in progress"
+                    raise PluginError("No recording in progress.")
                 
                 # Get reference and clear immediately to prevent double-reads
                 proc = self.dictation_process
@@ -531,7 +546,9 @@ class Plugin:
                 
                 return transcription if transcription else "No speech detected"
                 
+            except PluginError:
+                raise
             except Exception as e:
                 decky.logger.error(f"Error stopping voice recording: {str(e)}\n{traceback.format_exc()}")
-                return f"Error: {str(e)}"
+                raise PluginError(f"Could not stop voice recording: {e}")
 
