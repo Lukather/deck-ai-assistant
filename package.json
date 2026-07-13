@@ -1,6 +1,6 @@
 {
   "name": "deck-ai-assistant",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "An AI assistant for Steam Deck",
   "scripts": {
     "build": "rollup -c",
