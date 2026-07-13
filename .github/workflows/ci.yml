@@ -91,9 +91,13 @@ jobs:
           # Copy backend files
           cp main.py release/
           cp plugin.json release/
-          cp -r py_modules/nerd-dictation release/ 2>/dev/null || true
-          cp -r py_modules/vosk release/ 2>/dev/null || true
-          cp -r py_modules/vosk-model release/ 2>/dev/null || true
+
+          # Voice deps land under py_modules/ so main.py finds them via
+          # PY_MODULES_DIR (the Decky loader convention).
+          mkdir -p release/py_modules
+          cp -r py_modules/nerd-dictation release/py_modules/
+          cp -r py_modules/vosk release/py_modules/
+          cp -r py_modules/vosk-model release/py_modules/
 
           # Create zip package
           cd release
