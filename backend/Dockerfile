@@ -19,4 +19,5 @@ RUN wget -q https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip 
  && rm /tmp/model.zip
 
 COPY entrypoint.sh /backend/entrypoint.sh
+RUN chmod +x /backend/entrypoint.sh
 ENTRYPOINT [ "/backend/entrypoint.sh" ]
