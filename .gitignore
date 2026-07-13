@@ -57,3 +57,8 @@ out/*
 cli/
 cli/*
 cli/decky
+
+# Voice dependencies are built by CI (see .github/workflows/ci.yml voice-deps
+# job + backend/Dockerfile), not committed. Keeps the repo small and ensures
+# the bundled cffi .so always matches the SteamOS Python ABI at release time.
+py_modules/
