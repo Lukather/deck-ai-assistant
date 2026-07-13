@@ -20,6 +20,13 @@ CONFIG_PATH = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "config.json")
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
+# Sliding window over the conversation sent to Gemini. The full transcript
+# still lives in localStorage and renders in the UI, but only the last N
+# turns go into the prompt so long sessions don't exceed the context window.
+# Pure truncation for v1 (no recap of dropped turns); promoting this to a
+# user-facing setting is out of scope (#13).
+MAX_CONTEXT_TURNS = 20
+
 # Plugin directory paths for bundled dependencies. The Decky loader adds
 # `py_modules/` to sys.path automatically, so importable Python packages
 # should live there.
@@ -152,10 +159,17 @@ class Plugin:
 
             # Build a structured multi-turn contents array. The frontend sends
             # the full transcript including the new user message; map 'ai' to
-            # Gemini's 'model' role and skip empty entries.
+            # Gemini's 'model' role and skip empty entries. Apply a sliding
+            # window so only the last MAX_CONTEXT_TURNS turns are sent -- older
+            # turns stay in the UI/localStorage but are dropped from the prompt.
             contents = []
             if conversation and isinstance(conversation, list):
-                for msg in conversation:
+                window = conversation[-MAX_CONTEXT_TURNS:] if len(conversation) > MAX_CONTEXT_TURNS else conversation
+                if window is not conversation:
+                    decky.logger.info(
+                        f"Context window: sending last {len(window)} of {len(conversation)} turns"
+                    )
+                for msg in window:
                     role = msg.get('role', '')
                     text = (msg.get('text') or '').strip()
                     if not text:
