@@ -2,9 +2,6 @@ import { call, toaster } from "@decky/api";
 import { Button, Router, Spinner, TextField } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
-import ReactMarkdown from "react-markdown";
-import rehypeSanitize from "rehype-sanitize";
-import remarkGfm from "remark-gfm";
 import {
 	type GameEntry,
 	getGameNameByAppId,
@@ -19,34 +16,145 @@ const LEGACY_STORAGE_KEY = "chatHistory";
 // touch two fields, so this captures what we actually use.
 type AppLifetimeNotification = { bRunning: boolean; unAppID: number };
 
-const markdownComponents = {
-	p: ({ children }: { children?: React.ReactNode }) => (
-		<p style={{ margin: "0 0 8px" }}>{children}</p>
-	),
-	ul: ({ children }: { children?: React.ReactNode }) => (
-		<ul style={{ margin: "0 0 8px", paddingLeft: "20px" }}>{children}</ul>
-	),
-	ol: ({ children }: { children?: React.ReactNode }) => (
-		<ol style={{ margin: "0 0 8px", paddingLeft: "20px" }}>{children}</ol>
-	),
-	code: ({ children }: { children?: React.ReactNode }) => (
-		<code
-			style={{
-				backgroundColor: "#1e293b",
-				padding: "2px 6px",
-				borderRadius: "4px",
-				fontSize: "0.9em",
-			}}
-		>
-			{children}
-		</code>
-	),
-	a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-		<a href={href} style={{ color: "#60a5fa", textDecoration: "underline" }}>
-			{children}
-		</a>
-	),
-};
+/**
+ * Lightweight markdown renderer � handles the subset the AI actually outputs:
+ * **bold**, *italic*, `code`, [links](url), bullet lists (- or *),
+ * numbered lists (1.), and # headings. No external deps, avoids the
+ * ReactCurrentOwner crash that react-markdown causes in the Decky CEF env.
+ */
+function renderInline(text: string): React.ReactNode {
+	const parts: React.ReactNode[] = [];
+	let remaining = text;
+	let key = 0;
+	while (remaining) {
+		let m = remaining.match(/^(.*?)`([^`]+)`(.*)$/s);
+		if (m) {
+			if (m[1]) parts.push(m[1]);
+			parts.push(
+				<code
+					key={key++}
+					style={{
+						backgroundColor: "#1e293b",
+						padding: "2px 6px",
+						borderRadius: "4px",
+						fontSize: "0.9em",
+					}}
+				>
+					{m[2]}
+				</code>,
+			);
+			remaining = m[3];
+			continue;
+		}
+		m = remaining.match(/^(.*?)\[([^\]]+)\]\(([^)]+)\)(.*)$/s);
+		if (m) {
+			if (m[1]) parts.push(m[1]);
+			parts.push(
+				<a
+					key={key++}
+					href={m[3]}
+					style={{ color: "#60a5fa", textDecoration: "underline" }}
+				>
+					{m[2]}
+				</a>,
+			);
+			remaining = m[4];
+			continue;
+		}
+		m = remaining.match(/^(.*?)\*\*([^*]+)\*\*(.*)$/s);
+		if (m) {
+			if (m[1]) parts.push(m[1]);
+			parts.push(<strong key={key++}>{renderInline(m[2])}</strong>);
+			remaining = m[3];
+			continue;
+		}
+		m = remaining.match(/^(.*?)\*([^*]+)\*(.*)$/s);
+		if (m) {
+			if (m[1]) parts.push(m[1]);
+			parts.push(<em key={key++}>{renderInline(m[2])}</em>);
+			remaining = m[3];
+			continue;
+		}
+		parts.push(remaining);
+		break;
+	}
+	return <>{parts}</>;
+}
+
+function renderMarkdown(text: string): React.ReactNode {
+	const lines = text.split("\n");
+	const elements: React.ReactNode[] = [];
+	let listItems: string[] = [];
+	let listType: "ul" | "ol" | null = null;
+
+	const flushList = () => {
+		if (listItems.length === 0) return;
+		const items = listItems.map((item, i) => (
+			<li key={i}>{renderInline(item)}</li>
+		));
+		if (listType === "ol") {
+			elements.push(
+				<ol
+					key={elements.length}
+					style={{ margin: "0 0 8px", paddingLeft: "20px" }}
+				>
+					{items}
+				</ol>,
+			);
+		} else {
+			elements.push(
+				<ul
+					key={elements.length}
+					style={{ margin: "0 0 8px", paddingLeft: "20px" }}
+				>
+					{items}
+				</ul>,
+			);
+		}
+		listItems = [];
+		listType = null;
+	};
+
+	for (const line of lines) {
+		const bulletMatch = line.match(/^\s*[-*]\s+(.*)/);
+		const numberedMatch = line.match(/^\s*\d+\.\s+(.*)/);
+		if (bulletMatch) {
+			if (listType && listType !== "ul") flushList();
+			listType = "ul";
+			listItems.push(bulletMatch[1]);
+			continue;
+		}
+		if (numberedMatch) {
+			if (listType && listType !== "ol") flushList();
+			listType = "ol";
+			listItems.push(numberedMatch[1]);
+			continue;
+		}
+		flushList();
+		if (line.trim() === "") continue;
+		const headingMatch = line.match(/^(#{1,3})\s+(.*)/);
+		if (headingMatch) {
+			const level = headingMatch[1].length;
+			const size = level === 1 ? "1.3em" : level === 2 ? "1.1em" : "1em";
+			elements.push(
+				<div
+					key={elements.length}
+					style={{ fontWeight: "bold", fontSize: size, margin: "8px 0 4px" }}
+				>
+					{renderInline(headingMatch[2])}
+				</div>,
+			);
+			continue;
+		}
+		elements.push(
+			<p key={elements.length} style={{ margin: "0 0 8px" }}>
+				{renderInline(line)}
+			</p>,
+		);
+	}
+	flushList();
+	return <>{elements}</>;
+}
 
 const AIAssistant = () => {
 	const [input, setInput] = useState("");
@@ -336,10 +444,10 @@ const AIAssistant = () => {
 								borderTopLeftRadius: msg.role === "user" ? "12px" : "0px",
 								color: "#f1f5f9",
 								maxWidth: "80%",
-								whiteSpace: "pre-wrap",
+								whiteSpace: msg.role === "user" ? "pre-wrap" : undefined,
 							}}
 						>
-							{msg.role === "ai" ? msg.text : msg.text}
+							{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
 						</div>
 					</div>
 				))}
@@ -364,13 +472,7 @@ const AIAssistant = () => {
 								maxWidth: "80%",
 							}}
 						>
-							<ReactMarkdown
-								remarkPlugins={[remarkGfm]}
-								rehypePlugins={[rehypeSanitize]}
-								components={markdownComponents}
-							>
-								{typingText}
-							</ReactMarkdown>
+							{renderMarkdown(typingText)}
 						</div>
 					</div>
 				)}
