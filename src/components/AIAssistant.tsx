@@ -2,6 +2,9 @@ import { call, toaster } from "@decky/api";
 import { Button, Router, Spinner, TextField } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
 import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
 import {
 	type GameEntry,
 	getGameNameByAppId,
@@ -16,10 +19,34 @@ const LEGACY_STORAGE_KEY = "chatHistory";
 // touch two fields, so this captures what we actually use.
 type AppLifetimeNotification = { bRunning: boolean; unAppID: number };
 
-// Sanitization schema for AI-generated markdown
-// Allows safe markdown elements while blocking XSS vectors
-// Sanitization schema for AI-generated markdown
-// Allows safe markdown elements while blocking XSS vectors
+const markdownComponents = {
+	p: ({ children }: { children?: React.ReactNode }) => (
+		<p style={{ margin: "0 0 8px" }}>{children}</p>
+	),
+	ul: ({ children }: { children?: React.ReactNode }) => (
+		<ul style={{ margin: "0 0 8px", paddingLeft: "20px" }}>{children}</ul>
+	),
+	ol: ({ children }: { children?: React.ReactNode }) => (
+		<ol style={{ margin: "0 0 8px", paddingLeft: "20px" }}>{children}</ol>
+	),
+	code: ({ children }: { children?: React.ReactNode }) => (
+		<code
+			style={{
+				backgroundColor: "#1e293b",
+				padding: "2px 6px",
+				borderRadius: "4px",
+				fontSize: "0.9em",
+			}}
+		>
+			{children}
+		</code>
+	),
+	a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+		<a href={href} style={{ color: "#60a5fa", textDecoration: "underline" }}>
+			{children}
+		</a>
+	),
+};
 
 const AIAssistant = () => {
 	const [input, setInput] = useState("");
@@ -36,6 +63,7 @@ const AIAssistant = () => {
 		appid: number;
 		name: string;
 	} | null>(null);
+	const [gameImageUrl, setGameImageUrl] = useState<string | null>(null);
 	const [games, setGames] = useState<GameEntry[]>([]);
 	const [isRecording, setIsRecording] = useState(false);
 	const [speechSupported, setSpeechSupported] = useState(false);
@@ -83,15 +111,29 @@ const AIAssistant = () => {
 		};
 	}, [games]);
 
-	// Update active game name when games list is loaded (in case game was detected before games were fetched)
+	// Update active game name and capsule image when games list is loaded
 	useEffect(() => {
-		if (
-			games.length > 0 &&
-			activeGame &&
-			activeGame.name.startsWith("AppID:")
-		) {
-			const name = getGameNameByAppId(activeGame.appid, games);
-			setActiveGame({ appid: activeGame.appid, name });
+		if (games.length > 0 && activeGame) {
+			if (activeGame.name.startsWith("AppID:")) {
+				const name = getGameNameByAppId(activeGame.appid, games);
+				setActiveGame({ appid: activeGame.appid, name });
+			}
+			// Fetch the game's landscape/hero image via the appStore
+			try {
+				const overview = window.appStore?.GetAppOverviewByAppID?.(
+					activeGame.appid,
+				);
+				if (overview) {
+					const url = window.appStore?.GetLandscapeImageURLForApp?.(
+						overview as unknown as Parameters<
+							NonNullable<typeof window.appStore>["GetLandscapeImageURLForApp"]
+						>[0],
+					);
+					if (url) setGameImageUrl(url);
+				}
+			} catch {
+				// appStore not available, image stays null
+			}
 		}
 	}, [games, activeGame]);
 
@@ -218,21 +260,42 @@ const AIAssistant = () => {
 				overflowY: "auto",
 			}}
 		>
-			<h2 style={{ margin: 0, fontSize: "1.5em" }}>🎮 AI‑ssistant Deck</h2>
-
-			{/* Active Game Display */}
-			<div style={{ marginBottom: 16 }}>
-				{activeGame ? (
-					<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-						<span style={{ fontWeight: "bold" }}>🎮 Active Game:</span>
-						<span>
-							{activeGame.name ? activeGame.name : `AppID: ${activeGame.appid}`}
+			{/* Compact header: game capsule image when active, minimal title otherwise */}
+			{activeGame ? (
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 12,
+						marginBottom: 8,
+					}}
+				>
+					{gameImageUrl && (
+						<img
+							src={gameImageUrl}
+							alt={activeGame.name}
+							style={{
+								width: 120,
+								height: 45,
+								objectFit: "cover",
+								borderRadius: "6px",
+							}}
+						/>
+					)}
+					<div style={{ display: "flex", flexDirection: "column" }}>
+						<span style={{ fontSize: "0.85em", color: "#888" }}>
+							Now playing
+						</span>
+						<span style={{ fontWeight: "bold", fontSize: "1.1em" }}>
+							{activeGame.name || `AppID: ${activeGame.appid}`}
 						</span>
 					</div>
-				) : (
-					<div style={{ color: "#888" }}>No active game detected</div>
-				)}
-			</div>
+				</div>
+			) : (
+				<h2 style={{ margin: 0, fontSize: "1.2em", color: "#ccc" }}>
+					AI Assistant
+				</h2>
+			)}
 
 			{/* Clear Chat History Button */}
 			<Button
@@ -299,17 +362,22 @@ const AIAssistant = () => {
 								borderTopLeftRadius: "0px",
 								color: "#f1f5f9",
 								maxWidth: "80%",
-								whiteSpace: "pre-wrap",
 							}}
 						>
-							{typingText}
+							<ReactMarkdown
+								remarkPlugins={[remarkGfm]}
+								rehypePlugins={[rehypeSanitize]}
+								components={markdownComponents}
+							>
+								{typingText}
+							</ReactMarkdown>
 						</div>
 					</div>
 				)}
 			</div>
 
 			{/* Input section with voice button */}
-			<div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
+			<div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
 				<div style={{ flex: 1 }}>
 					<TextField
 						label="Question"
@@ -324,9 +392,9 @@ const AIAssistant = () => {
 						onClick={handleVoiceInput}
 						disabled={loading}
 						style={{
-							paddingTop: "-12px",
 							height: "40px",
 							width: "45px",
+							minWidth: "45px",
 							display: "flex",
 							alignItems: "center",
 							justifyContent: "center",

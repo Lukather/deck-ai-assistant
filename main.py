@@ -15,21 +15,52 @@ from httpx import ReadTimeout
 # Use Decky Loader recommended paths for settings
 CONFIG_PATH = os.path.join(decky.DECKY_PLUGIN_SETTINGS_DIR, "config.json")
 
-# Default Gemini model. Promoted to a user setting in a follow-up; the URL
-# and all log lines read this constant.
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+# --- Provider configuration ---
+# Each provider has: base_url, api format, auth style, model list, web search tool.
+# Config shape in config.json:
+#   {"provider": "gemini", "api_key": "...", "model": "gemini-2.5-flash",
+#    "product_id": "", "custom_model": ""}
 
-# Models offered in the Settings picker. Curated to current Gemini API
-# variants; the user can switch at any time.
-SUPPORTED_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-]
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
+# Infomaniak base is built per-request: https://api.infomaniak.com/2/ai/{product_id}/openai
+INFOMANIAK_API_BASE = "https://api.infomaniak.com/2/ai"
+
+PROVIDER_MODELS = {
+    "gemini": [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+    ],
+    "openrouter": [
+        "google/gemini-2.5-flash",
+        "google/gemini-2.5-pro",
+        "anthropic/claude-3.5-sonnet",
+        "openai/gpt-4o-mini",
+        "openai/gpt-4o",
+        "meta-llama/llama-3.3-70b-instruct",
+    ],
+    "infomaniak": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+    ],
+}
+
+DEFAULT_PROVIDER = "gemini"
+DEFAULT_MODEL = "gemini-2.5-flash"
+
+# Anti-hallucination guidance appended to every system instruction.
+ANTI_HALLUCINATION_INSTRUCTION = (
+    "If you are not confident about facts—especially recent game releases, "
+    "patches, or strategy details—say you don't know rather than guessing. "
+    "When web search is available, use it for questions about current events, "
+    "recent releases, or specific up-to-date game details."
+)
 
 # Sliding window over the conversation sent to Gemini. The full transcript
 # still lives in localStorage and renders in the UI, but only the last N
@@ -76,26 +107,70 @@ def _write_config(cfg: dict) -> None:
     os.chmod(CONFIG_PATH, 0o600)
 
 
+def _get_provider() -> str:
+    """Return the saved provider, falling back to DEFAULT_PROVIDER."""
+    provider = _read_config().get("provider", DEFAULT_PROVIDER)
+    return provider if provider in PROVIDER_MODELS else DEFAULT_PROVIDER
+
+
 def _get_config_model() -> str:
-    """Return the saved model, falling back to GEMINI_MODEL if unset/invalid."""
-    model = _read_config().get("model", GEMINI_MODEL)
-    return model if model in SUPPORTED_MODELS else GEMINI_MODEL
+    """Return the saved model for the current provider, with fallback."""
+    cfg = _read_config()
+    provider = _get_provider()
+    # OpenRouter custom model overrides the dropdown
+    custom = cfg.get("custom_model", "")
+    if provider == "openrouter" and custom:
+        return custom
+    model = cfg.get("model", DEFAULT_MODEL)
+    models = PROVIDER_MODELS.get(provider, [])
+    return model if model in models else (models[0] if models else DEFAULT_MODEL)
 
 
-async def _probe_gemini_key(api_key: str) -> tuple[bool, str]:
-    """Cheap authenticated call to check the API key works.
+def _get_api_base(provider: str, cfg: dict | None = None) -> str:
+    """Return the API base URL for the given provider."""
+    if provider == "gemini":
+        return GEMINI_API_BASE
+    if provider == "openrouter":
+        return OPENROUTER_API_BASE
+    if provider == "infomaniak":
+        cfg = cfg or _read_config()
+        product_id = cfg.get("product_id", "")
+        if not product_id:
+            raise PluginError("Infomaniak product_id is not set. Add it in AI Settings.")
+        return f"{INFOMANIAK_API_BASE}/{product_id}/openai"
+    return GEMINI_API_BASE
 
-    Hits models.list with pageSize=1 (minimal payload). Returns (ok, message).
-    """
-    url = f"{GEMINI_API_BASE}?key={api_key}&pageSize=1"
+
+def _build_system_text(game: dict | None) -> str:
+    """Build the system instruction text shared across all providers."""
+    parts = ["You are an AI assistant for a Steam Deck user. Be concise and helpful."]
+    if game and isinstance(game, dict) and game.get('name'):
+        parts.append(
+            f"The user is currently playing {game['name']} (Steam AppID: {game['appid']}). "
+            "Use this context when relevant, but do not force game references if the question is unrelated."
+        )
+    parts.append(ANTI_HALLUCINATION_INSTRUCTION)
+    return " ".join(parts)
+
+
+async def _probe_api_key(provider: str, api_key: str, cfg: dict | None = None) -> tuple[bool, str]:
+    """Cheap authenticated call to check the API key works for the provider."""
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
+            if provider == "gemini":
+                url = f"{GEMINI_API_BASE}?key={api_key}&pageSize=1"
+                resp = await client.get(url)
+            else:
+                base = _get_api_base(provider, cfg)
+                resp = await client.get(
+                    f"{base}/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
     except Exception as e:
         return False, f"Probe failed: {e}"
     if resp.status_code == 200:
         return True, "Key verified."
-    return False, f"Gemini rejected the key (HTTP {resp.status_code})."
+    return False, f"{provider} rejected the key (HTTP {resp.status_code})."
 
 
 def _subprocess_python_version() -> tuple[int, int] | None:
@@ -172,7 +247,6 @@ class Plugin:
     
     async def ask_question(self, payload) -> str:
         try:
-            # Support both string and dict payloads
             if isinstance(payload, dict):
                 question = payload.get('question', '')
                 game = payload.get('game', None)
@@ -182,128 +256,168 @@ class Plugin:
                 game = None
                 conversation = None
 
-            # Question validation
             if not question or not isinstance(question, str) or not question.strip():
                 raise PluginError("Question is empty.")
 
-            # Retrieve API key from settings directory
-            if not os.path.exists(CONFIG_PATH):
-                raise PluginError("API key not found. Set it in AI Settings.")
-
-            with open(CONFIG_PATH, "r") as f:
-                api_key = json.load(f).get("api_key", "")
-
+            cfg = _read_config()
+            api_key = cfg.get("api_key", "")
             if not api_key:
                 raise PluginError("API key is not set. Add it in AI Settings.")
 
+            provider = _get_provider()
+            model = _get_config_model()
+            system_text = _build_system_text(game)
+
             # Security: Never log full API key - mask all but last 4 chars
             masked_key = f"****{api_key[-4:]}" if len(api_key) >= 4 else "****"
-            decky.logger.info(f"API key used: {masked_key}")
+            decky.logger.info(f"API key used: {masked_key} (provider={provider})")
 
-            # Build a stable system instruction. Carries role + persistent
-            # context (current game) that the model should always see.
-            system_parts = [
-                "You are an AI assistant for a Steam Deck user. Be concise and helpful."
-            ]
-            if game and isinstance(game, dict) and game.get('name'):
-                system_parts.append(
-                    f"The user is currently playing {game['name']} (Steam AppID: {game['appid']}). "
-                    "Use this context when relevant, but do not force game references if the question is unrelated."
-                )
-            system_instruction = {"parts": [{"text": " ".join(system_parts)}]}
-
-            # Build a structured multi-turn contents array. The frontend sends
-            # the full transcript including the new user message; map 'ai' to
-            # Gemini's 'model' role and skip empty entries. Apply a sliding
-            # window so only the last MAX_CONTEXT_TURNS turns are sent -- older
-            # turns stay in the UI/localStorage but are dropped from the prompt.
-            contents = []
+            # Build the sliding-window conversation (shared logic)
+            window = []
             if conversation and isinstance(conversation, list):
                 window = conversation[-MAX_CONTEXT_TURNS:] if len(conversation) > MAX_CONTEXT_TURNS else conversation
                 if window is not conversation:
                     decky.logger.info(
                         f"Context window: sending last {len(window)} of {len(conversation)} turns"
                     )
-                for msg in window:
-                    role = msg.get('role', '')
-                    text = (msg.get('text') or '').strip()
-                    if not text:
-                        continue
-                    if role == 'user':
-                        contents.append({"role": "user", "parts": [{"text": text}]})
-                    elif role == 'ai':
-                        contents.append({"role": "model", "parts": [{"text": text}]})
 
-            # Safety net: if the transcript is missing/empty, just send the question.
-            if not contents:
-                contents.append({"role": "user", "parts": [{"text": question.strip()}]})
-
-            gemini_payload = {
-                "systemInstruction": system_instruction,
-                "contents": contents,
-            }
-
-            headers = {"Content-Type": "application/json"}
-            model = _get_config_model()
-            url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
-
-            # Metadata-only log line. No message text, no API key in the URL.
-            decky.logger.info(f"Gemini call: model={model} turns={len(contents)}")
-
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    start = time.monotonic()
-                    response = await client.post(url, headers=headers, json=gemini_payload)
-                    latency = time.monotonic() - start
-            except ReadTimeout:
-                decky.logger.error("Timeout while waiting for Gemini API response.")
-                raise PluginError("The AI service took too long to respond. Try again.")
-            except Exception as e:
-                decky.logger.error(f"Gemini request failed: {e}")
-                raise PluginError(f"Could not reach the AI service: {e}")
-
-            # Metadata-only response log. No response body.
-            if response.status_code != 200:
-                decky.logger.error(
-                    f"Gemini HTTP {response.status_code} in {latency:.2f}s"
-                )
-                raise PluginError(f"Gemini returned HTTP {response.status_code}.")
-
-            data = response.json()
-
-            # Log token usage if Gemini returned it. No message text.
-            usage = data.get("usageMetadata") or {}
-            if usage:
-                decky.logger.info(
-                    f"Gemini tokens: prompt={usage.get('promptTokenCount')} "
-                    f"output={usage.get('candidatesTokenCount')} "
-                    f"total={usage.get('totalTokenCount')} "
-                    f"latency={latency:.2f}s"
-                )
-
-            try:
-                output = data["candidates"][0]["content"]["parts"][0]["text"]
-            except (KeyError, IndexError, TypeError) as e:
-                decky.logger.error(f"Unexpected Gemini response shape: {e}")
-                raise PluginError("The AI service returned an unexpected response.")
-            # Don't log the response text. Only its length.
-            decky.logger.info(f"Gemini output: {len(output)} chars")
-            return output
+            if provider == "gemini":
+                return await self._ask_gemini(api_key, model, system_text, window, question)
+            return await self._ask_openai_compatible(provider, api_key, model, system_text, window, question, cfg)
 
         except PluginError:
-            # User-facing errors propagate to the frontend as rejected promises.
             raise
         except Exception as e:
             decky.logger.error(f"Error in ask_question: {str(e)}\n{traceback.format_exc()}")
             raise PluginError(f"Unexpected error: {e}")
 
-    async def save_api_key(self, key: str) -> dict:
-        """Save the key and probe Gemini to verify it works.
+    async def _ask_gemini(self, api_key: str, model: str, system_text: str, window: list, question: str) -> str:
+        """Gemini generateContent path with google_search grounding."""
+        contents = []
+        for msg in window:
+            role = msg.get('role', '')
+            text = (msg.get('text') or '').strip()
+            if not text:
+                continue
+            if role == 'user':
+                contents.append({"role": "user", "parts": [{"text": text}]})
+            elif role == 'ai':
+                contents.append({"role": "model", "parts": [{"text": text}]})
+        if not contents:
+            contents.append({"role": "user", "parts": [{"text": question.strip()}]})
 
-        Returns {"valid": bool, "message": str} so the frontend can drive
-        the toast + badge from the probe result, not the key's length.
-        The key is saved either way so the user can edit it without retyping.
-        """
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_text}]},
+            "contents": contents,
+            "tools": [{"google_search": {}}],
+        }
+        url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
+        decky.logger.info(f"Gemini call: model={model} turns={len(contents)}")
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                start = time.monotonic()
+                response = await client.post(url, headers={"Content-Type": "application/json"}, json=payload)
+                latency = time.monotonic() - start
+        except ReadTimeout:
+            decky.logger.error("Timeout while waiting for Gemini API response.")
+            raise PluginError("The AI service took too long to respond. Try again.")
+        except Exception as e:
+            decky.logger.error(f"Gemini request failed: {e}")
+            raise PluginError(f"Could not reach the AI service: {e}")
+
+        if response.status_code != 200:
+            decky.logger.error(f"Gemini HTTP {response.status_code} in {latency:.2f}s")
+            raise PluginError(f"Gemini returned HTTP {response.status_code}.")
+
+        data = response.json()
+        usage = data.get("usageMetadata") or {}
+        if usage:
+            decky.logger.info(
+                f"Gemini tokens: prompt={usage.get('promptTokenCount')} "
+                f"output={usage.get('candidatesTokenCount')} "
+                f"total={usage.get('totalTokenCount')} latency={latency:.2f}s"
+            )
+        # Log whether grounding (web search) was used
+        gm = data.get("candidates", [{}])[0].get("groundingMetadata") or {}
+        if gm:
+            queries = gm.get("webSearchQueries", [])
+            decky.logger.info(f"Gemini grounding: {len(queries)} search query(s)")
+
+        try:
+            output = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError) as e:
+            decky.logger.error(f"Unexpected Gemini response shape: {e}")
+            raise PluginError("The AI service returned an unexpected response.")
+        decky.logger.info(f"Gemini output: {len(output)} chars")
+        return output
+
+    async def _ask_openai_compatible(self, provider: str, api_key: str, model: str, system_text: str, window: list, question: str, cfg: dict) -> str:
+        """OpenAI-compatible chat completions path (openrouter, infomaniak)."""
+        messages = [{"role": "system", "content": system_text}]
+        for msg in window:
+            role = msg.get('role', '')
+            text = (msg.get('text') or '').strip()
+            if not text:
+                continue
+            if role == 'user':
+                messages.append({"role": "user", "content": text})
+            elif role == 'ai':
+                messages.append({"role": "assistant", "content": text})
+        if len(messages) == 1:  # only system, no conversation
+            messages.append({"role": "user", "content": question.strip()})
+
+        payload = {"model": model, "messages": messages}
+        # Web search tool: openrouter supports openrouter:web_search; infomaniak has none
+        if provider == "openrouter":
+            payload["tools"] = [{"type": "openrouter:web_search"}]
+
+        base = _get_api_base(provider, cfg)
+        url = f"{base}/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        decky.logger.info(f"{provider} call: model={model} turns={len(messages)-1}")
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                start = time.monotonic()
+                response = await client.post(url, headers=headers, json=payload)
+                latency = time.monotonic() - start
+        except ReadTimeout:
+            decky.logger.error(f"Timeout while waiting for {provider} API response.")
+            raise PluginError("The AI service took too long to respond. Try again.")
+        except Exception as e:
+            decky.logger.error(f"{provider} request failed: {e}")
+            raise PluginError(f"Could not reach the AI service: {e}")
+
+        if response.status_code != 200:
+            decky.logger.error(f"{provider} HTTP {response.status_code} in {latency:.2f}s")
+            raise PluginError(f"{provider} returned HTTP {response.status_code}.")
+
+        data = response.json()
+        usage = data.get("usage") or {}
+        if usage:
+            decky.logger.info(
+                f"{provider} tokens: prompt={usage.get('prompt_tokens')} "
+                f"output={usage.get('completion_tokens')} latency={latency:.2f}s"
+            )
+        # Log web search usage if openrouter reports it
+        server_tool = (usage.get("server_tool_use") or {}).get("web_search_requests")
+        if server_tool:
+            decky.logger.info(f"{provider} web search: {server_tool} request(s)")
+
+        try:
+            output = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as e:
+            decky.logger.error(f"Unexpected {provider} response shape: {e}")
+            raise PluginError("The AI service returned an unexpected response.")
+        decky.logger.info(f"{provider} output: {len(output)} chars")
+        return output
+
+    async def save_api_key(self, key: str) -> dict:
+        """Save the key and probe the current provider to verify it works."""
         key = (key or "").strip()
         if not key:
             return {"valid": False, "message": "Key is empty."}
@@ -311,8 +425,9 @@ class Plugin:
             cfg = _read_config()
             cfg["api_key"] = key
             _write_config(cfg)
-            decky.logger.info("API key saved, probing Gemini...")
-            ok, msg = await _probe_gemini_key(key)
+            provider = _get_provider()
+            decky.logger.info(f"API key saved, probing {provider}...")
+            ok, msg = await _probe_api_key(provider, key, cfg)
             decky.logger.info(f"Key probe: valid={ok} ({msg})")
             return {"valid": ok, "message": msg}
         except Exception as e:
@@ -321,26 +436,74 @@ class Plugin:
 
     async def validate_api_key(self) -> bool:
         """Probe the currently-saved key. Used on mount to set the badge."""
-        key = _read_config().get("api_key", "")
+        cfg = _read_config()
+        key = cfg.get("api_key", "")
         if not key:
             return False
-        ok, _ = await _probe_gemini_key(key)
+        provider = _get_provider()
+        ok, _ = await _probe_api_key(provider, key, cfg)
         return ok
 
     async def get_api_key(self) -> str:
         return _read_config().get("api_key", "")
 
+    async def get_provider(self) -> str:
+        return _get_provider()
+
+    async def set_provider(self, provider: str) -> str:
+        if provider not in PROVIDER_MODELS:
+            raise PluginError(f"Unsupported provider: {provider}")
+        cfg = _read_config()
+        cfg["provider"] = provider
+        # Reset model to the first model of the new provider
+        cfg["model"] = PROVIDER_MODELS[provider][0]
+        cfg.pop("custom_model", None)  # clear openrouter custom model on switch
+        _write_config(cfg)
+        decky.logger.info(f"Provider set to {provider}, model reset to {cfg['model']}")
+        return "Provider saved."
+
     async def get_model(self) -> str:
         return _get_config_model()
 
     async def set_model(self, model: str) -> str:
-        if model not in SUPPORTED_MODELS:
-            raise PluginError(f"Unsupported model: {model}")
+        provider = _get_provider()
+        models = PROVIDER_MODELS.get(provider, [])
+        if model not in models:
+            raise PluginError(f"Unsupported model for {provider}: {model}")
         cfg = _read_config()
         cfg["model"] = model
         _write_config(cfg)
         decky.logger.info(f"Model set to {model}")
         return "Model saved."
+
+    async def get_models(self) -> list[str]:
+        """Return the model list for the current provider."""
+        return PROVIDER_MODELS.get(_get_provider(), [])
+
+    async def set_custom_model(self, model: str) -> str:
+        """Set a custom model string (OpenRouter only, overrides dropdown)."""
+        provider = _get_provider()
+        if provider != "openrouter":
+            raise PluginError("Custom model is only available for OpenRouter.")
+        cfg = _read_config()
+        cfg["custom_model"] = model.strip()
+        _write_config(cfg)
+        decky.logger.info(f"Custom model set to {model.strip()}")
+        return "Custom model saved."
+
+    async def get_custom_model(self) -> str:
+        return _read_config().get("custom_model", "")
+
+    async def set_product_id(self, product_id: str) -> str:
+        """Set the Infomaniak product_id."""
+        cfg = _read_config()
+        cfg["product_id"] = product_id.strip()
+        _write_config(cfg)
+        decky.logger.info(f"Product ID set")
+        return "Product ID saved."
+
+    async def get_product_id(self) -> str:
+        return _read_config().get("product_id", "")
 
     async def log_message(self, message: str) -> str:
         """

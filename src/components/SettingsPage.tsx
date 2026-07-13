@@ -3,19 +3,9 @@ import { Button, Dropdown, Field, PanelSection, TextField } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCheckCircle, FaKey, FaTimesCircle } from "react-icons/fa";
 
-const SUPPORTED_MODELS = [
-	"gemini-2.5-flash",
-	"gemini-2.5-pro",
-	"gemini-2.0-flash",
-	"gemini-2.0-flash-lite",
-	"gemini-1.5-flash",
-	"gemini-1.5-pro",
-];
+const PROVIDERS = ["gemini", "openrouter", "infomaniak"];
 
-const modelOptions = SUPPORTED_MODELS.map((m) => ({
-	data: m,
-	label: m,
-}));
+const providerOptions = PROVIDERS.map((p) => ({ data: p, label: p }));
 
 interface SaveResult {
 	valid: boolean;
@@ -23,24 +13,40 @@ interface SaveResult {
 }
 
 const SettingsPage = () => {
+	const [provider, setProvider] = useState("gemini");
 	const [apiKey, setApiKey] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [isKeyValid, setIsKeyValid] = useState(false);
 	const [model, setModel] = useState("gemini-2.5-flash");
+	const [models, setModels] = useState<string[]>([]);
 	const [modelSaving, setModelSaving] = useState(false);
+	const [customModel, setCustomModel] = useState("");
+	const [productId, setProductId] = useState("");
 
 	useEffect(() => {
 		const init = async () => {
 			try {
+				const savedProvider = await call<[], string>("get_provider");
+				if (savedProvider) setProvider(savedProvider);
+
 				const savedKey = await call<[], string>("get_api_key");
 				if (savedKey?.trim()) {
 					setApiKey(savedKey);
-					// Probe the saved key so the badge reflects real validity.
 					const valid = await call<[], boolean>("validate_api_key");
 					setIsKeyValid(valid);
 				}
+
 				const savedModel = await call<[], string>("get_model");
 				if (savedModel) setModel(savedModel);
+
+				const modelList = await call<[], string[]>("get_models");
+				if (modelList) setModels(modelList);
+
+				const savedCustom = await call<[], string>("get_custom_model");
+				if (savedCustom) setCustomModel(savedCustom);
+
+				const savedProductId = await call<[], string>("get_product_id");
+				if (savedProductId) setProductId(savedProductId);
 			} catch (error) {
 				console.error("Settings init error:", error);
 				setIsKeyValid(false);
@@ -48,6 +54,35 @@ const SettingsPage = () => {
 		};
 		init();
 	}, []);
+
+	const refreshModels = async () => {
+		try {
+			const modelList = await call<[], string[]>("get_models");
+			if (modelList) setModels(modelList);
+			const savedModel = await call<[], string>("get_model");
+			if (savedModel) setModel(savedModel);
+		} catch (error) {
+			console.error("Error refreshing models:", error);
+		}
+	};
+
+	const handleProviderChange = async (data: { data: string }) => {
+		const newProvider = data.data;
+		setProvider(newProvider);
+		setIsKeyValid(false);
+		setCustomModel("");
+		try {
+			await call<[string], string>("set_provider", newProvider);
+			await refreshModels();
+			toaster.toast({
+				title: "Provider switched",
+				body: `Now using ${newProvider}. Enter your API key.`,
+				duration: 4000,
+			});
+		} catch (error) {
+			console.error("Error switching provider:", error);
+		}
+	};
 
 	const handleSave = async () => {
 		if (!apiKey.trim()) return;
@@ -89,10 +124,56 @@ const SettingsPage = () => {
 		}
 	};
 
+	const handleCustomModelSave = async () => {
+		if (!customModel.trim()) return;
+		try {
+			await call<[string], string>("set_custom_model", customModel.trim());
+			toaster.toast({
+				title: "Custom model saved",
+				body: customModel.trim(),
+				duration: 3000,
+			});
+		} catch (error) {
+			console.error("Error saving custom model:", error);
+		}
+	};
+
+	const handleProductIdSave = async () => {
+		if (!productId.trim()) return;
+		try {
+			await call<[string], string>("set_product_id", productId.trim());
+			toaster.toast({
+				title: "Product ID saved",
+				body: productId.trim(),
+				duration: 3000,
+			});
+		} catch (error) {
+			console.error("Error saving product ID:", error);
+		}
+	};
+
+	const modelOptions = models.map((m) => ({ data: m, label: m }));
+
 	return (
 		<div style={{ paddingTop: "52px" }}>
 			<PanelSection title="AI Settings">
-				<div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+				<Field label="Provider">
+					<Dropdown
+						rgOptions={providerOptions}
+						selectedOption={provider}
+						onChange={handleProviderChange}
+						menuLabel="Select provider"
+					/>
+				</Field>
+
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: 12,
+						marginTop: 12,
+					}}
+				>
 					<FaKey size={16} />
 					<TextField
 						value={apiKey}
@@ -119,7 +200,7 @@ const SettingsPage = () => {
 				</Button>
 			</PanelSection>
 
-			<PanelSection title="Gemini Status">
+			<PanelSection title="Status">
 				<div
 					style={{
 						display: "flex",
@@ -135,7 +216,7 @@ const SettingsPage = () => {
 
 			<PanelSection title="Model">
 				<Field
-					label="Gemini model"
+					label="Model"
 					description={modelSaving ? "Saving..." : undefined}
 				>
 					<Dropdown
@@ -146,6 +227,46 @@ const SettingsPage = () => {
 						disabled={modelSaving}
 					/>
 				</Field>
+
+				{provider === "openrouter" && (
+					<Field
+						label="Custom model"
+						description="Override the dropdown with any OpenRouter model ID"
+					>
+						<TextField
+							value={customModel}
+							onChange={(e) => setCustomModel(e.currentTarget.value)}
+							label="e.g. anthropic/claude-3.7-sonnet"
+						/>
+						<Button
+							style={{ marginTop: 8 }}
+							onClick={handleCustomModelSave}
+							disabled={!customModel.trim()}
+						>
+							Save custom model
+						</Button>
+					</Field>
+				)}
+
+				{provider === "infomaniak" && (
+					<Field
+						label="Product ID"
+						description="Required for Infomaniak AI API"
+					>
+						<TextField
+							value={productId}
+							onChange={(e) => setProductId(e.currentTarget.value)}
+							label="e.g. abc123"
+						/>
+						<Button
+							style={{ marginTop: 8 }}
+							onClick={handleProductIdSave}
+							disabled={!productId.trim()}
+						>
+							Save product ID
+						</Button>
+					</Field>
+				)}
 			</PanelSection>
 		</div>
 	);
